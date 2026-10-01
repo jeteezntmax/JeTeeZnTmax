@@ -1,0 +1,108 @@
+#!/system/bin/sh
+# ============================================================
+#  KSU 系统工具箱 · 安装脚本
+#  内含三部分：
+#    1. 工具箱 WebUI（本模块自己）
+#    2. Device Faker 引擎（GPL-3.0，见 NOTICE-device_faker.txt）
+#    3. Extreme GT 去温控（作者 嘟嘟ski & AB，见 NOTICE-extreme-gt.txt）
+# ============================================================
+
+ui_print "=========================================="
+ui_print " 系统工具箱"
+ui_print " 含 Device Faker 引擎 + Extreme GT"
+ui_print "=========================================="
+
+# ---------- 1. Device Faker 数据目录 ----------
+DF_DATA=/data/adb/device_faker
+DF_CFG=$DF_DATA/config/config.toml
+
+ui_print "- 准备 Device Faker 数据目录"
+mkdir -p "$DF_DATA/config" "$DF_DATA/logs"
+chmod 755 "$DF_DATA" "$DF_DATA/config" "$DF_DATA/logs"
+
+if [ -f "$DF_CFG" ]; then
+    ui_print "- 已有配置，保留不动"
+else
+    if [ -f "$MODPATH/df-default-config.toml" ]; then
+        cp -f "$MODPATH/df-default-config.toml" "$DF_CFG"
+        chmod 644 "$DF_CFG"
+        chcon u:object_r:system_file:s0 "$DF_CFG" 2>/dev/null
+        ui_print "- 已写入默认配置：$DF_CFG"
+    fi
+fi
+rm -f "$MODPATH/df-default-config.toml"
+
+# ---------- 2. Extreme GT 数据目录 ----------
+EG_DIR=/data/adb/ksu_toolbox
+EG_CFG=$EG_DIR/eg.txt
+
+ui_print "- 准备 Extreme GT 配置"
+mkdir -p "$EG_DIR"
+chmod 755 "$EG_DIR"
+if [ -f "$EG_CFG" ]; then
+    ui_print "- 已有 EG 配置，保留不动"
+else
+    cat > "$EG_CFG" <<'EOF'
+enabled=1
+xml=1
+emul=1
+gpu=1
+touch=1
+horae=1
+EOF
+    chmod 644 "$EG_CFG"
+    ui_print "- 已写入默认 EG 配置（默认全开）"
+fi
+
+# 铺一份默认任务表 —— 这样浏览器模式一装完就有数据，
+# 不需要先在 KernelSU 里打开一次 WebView。页面打开后会用最新的覆盖它。
+if [ -f "$MODPATH/tasks.default.txt" ]; then
+    cp -f "$MODPATH/tasks.default.txt" "$EG_DIR/tasks.txt"
+    chmod 644 "$EG_DIR/tasks.txt"
+    ui_print "- 已铺设离线数据任务表"
+fi
+
+# ---------- 3. 生成去温控配置 ----------
+if [ -f "$MODPATH/eg-setup.sh" ]; then
+    # MODPATH 不是环境变量，必须显式传过去
+    MODPATH="$MODPATH" sh "$MODPATH/eg-setup.sh"
+fi
+
+# ---------- 4. Zygisk 检查（不中断） ----------
+HAS_ZYGISK=0
+if find /data/adb/modules /data/adb/modules_update /data/adb/ksu/lib \
+        \( -name "libzygisk.so" -o -name "libzygisk64.so" \) 2>/dev/null | grep -q .; then
+    HAS_ZYGISK=1
+fi
+if [ "$HAS_ZYGISK" = "0" ]; then
+    ui_print "! 没检测到 Zygisk 实现，Device Faker 不会生效"
+    ui_print "! 需要另装 ZygiskNext（Magisk 自带的那个不行）"
+fi
+
+# ---------- 5. 权限 ----------
+ui_print "- 设置权限"
+set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
+set_perm_recursive "$MODPATH/zygisk" 0 0 0755 0644
+set_perm_recursive "$MODPATH/bin" 0 0 0755 0755
+set_perm "$MODPATH/service.sh" 0 0 0755
+[ -d "$MODPATH/app" ] && set_perm_recursive "$MODPATH/app" 0 0 0755 0644
+[ -f "$MODPATH/bin/ksu_guard" ] && set_perm "$MODPATH/bin/ksu_guard" 0 0 0755
+set_perm "$MODPATH/eg-setup.sh" 0 0 0755
+
+# XML / json / txt 覆盖件给正确的 SELinux 上下文
+for d in odm my_product vendor product system; do
+    [ -d "$MODPATH/$d" ] && set_perm_recursive "$MODPATH/$d" 0 0 0755 0644 u:object_r:vendor_configs_file:s0
+done
+
+ui_print "=========================================="
+ui_print " 装好了，重启后在模块列表点「打开」"
+ui_print " 温度页可以单独开关 Extreme GT 的每一项"
+ui_print "=========================================="
+
+if [ -d /data/adb/modules/extreme_gt ] || [ -d /data/adb/modules_update/extreme_gt ]; then
+    ui_print "! 检测到独立安装的 Extreme GT，请把它停用或卸载"
+    ui_print "! 两者会重复挂载同一批 XML"
+fi
+if [ -d /data/adb/modules/device_faker ] || [ -d /data/adb/modules_update/device_faker ]; then
+    ui_print "! 检测到独立安装的 device_faker，请把它停用或卸载"
+fi
