@@ -114,9 +114,13 @@ Device Faker 的配置前端（TOML 编辑、模板管理、备份）。
 - 地址：https://github.com/Seyud/device_faker
 - 协议：**GPL-3.0**
 
-> 因为它是 GPL-3.0，本人**无权对它附加「禁止修改」这类限制**，
-> 所以它的任何文件都**没有**放进本仓库。
-> 想用机型伪装功能，请自行去上游下载安装。
+> 因为它是 GPL-3.0，本人**无权对它附加「禁止修改」这类限制**。
+>
+> **本仓库的源码里不含它的任何文件** —— 你要二次开发，请去上游拿。
+>
+> 但 `release/` 里的**安装包**为了开箱可用，打包了它的运行时文件
+> （`device_faker_cli`、`zygisk/arm64-v8a.so`）。**这部分版权归 Seyud，
+> 遵循 GPL-3.0**，可以自由再分发 / 修改，不受本仓库协议约束。
 
 ### Extreme GT —— 去温控需要
 
@@ -145,6 +149,8 @@ Device Faker 的配置前端（TOML 编辑、模板管理、备份）。
 │   └── guard/              ksu_guard 的 C 源码 + 测试小程序
 ├── customize.sh / service.sh / module.prop
 └── release/                编好的 APK 和模块 zip
+     ↑ 模块 zip 里打包了 Device Faker 的运行时（GPL-3.0，见上）
+       源码目录里没有它
 ```
 
 ---
