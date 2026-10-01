@@ -1,0 +1,7 @@
+# 构建产物
+*.o
+*.ko
+build/
+out/
+app/debug.keystore
+*.log
