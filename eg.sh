@@ -24,7 +24,7 @@ MODDIR=${0%/*}/..
 mkdir -p "$DIR" 2>/dev/null
 
 load() {
-    enabled=1; xml=1; emul=1; gpu=1; touch=1; horae=1
+    enabled=0; xml=0; emul=0; gpu=0; touch=0; horae=0   # 默认全关
     [ -f "$CONF" ] || return 0
     while IFS='=' read -r k v; do
         case "$k" in
