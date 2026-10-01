@@ -724,7 +724,7 @@ function pick(obj, keys){
 const PREF_KEY = "ksu_toolbox_prefs";
 const DEFAULT_PREFS = {
   theme: "auto", ambient: "1", anim: "1", dock: "1",
-  unit: "C", speed: "1", tab: "home", http: "0", port: "8765"
+  unit: "C", speed: "1", tab: "home", http: "0", port: "8765", thermWarn: "0"
 };
 function prefs(){
   if(!state.prefs){
@@ -4406,9 +4406,27 @@ function pollGuard(){
     try{ const r = await sh("tail -n 250 " + shq(GUARD_RUN_LOG) + " 2>/dev/null", 9000); txt = r.stdout || ""; }
     catch(e){}
     if(txt) renderGuardOut(txt);
-    if(/退出码=/.test(txt)){ 
+    if(/退出码=/.test(txt)){
       const hits = (txt.match(/^\S*\s*!!/gm) || []).length;
-      toast(hits ? ("抓到 " + hits + " 处危险行为，详见终端") : "跑完了，没发现危险行为");
+      const anti = /\[反调试\]/.test(txt);
+      if(anti){
+        // 反 hook 的样本会去查 TracerPid / 关 dumpable，一发现被跟踪就装死或退出
+        openModal("⚠️ 这个文件可能有防 hook", "不推荐执行",
+          banner("danger", "检测到反调试行为",
+            "它在运行期间检查了是否被跟踪（读 /proc/self/status 找 TracerPid、" +
+            "prctl(PR_SET_DUMPABLE,0)、或者直接调 ptrace）。") +
+          '<section class="card row-list">' +
+            '<div class="row"><span>意味着</span><strong>它知道自己被监督了</strong></div>' +
+            '<div class="row"><span>可能的表现</span><strong>立刻退出 / 装死 / 换另一条路动手</strong></div>' +
+            '<div class="row"><span>建议</span><strong class="danger">不要执行，先在隔离环境里看</strong></div>' +
+          '</section>' +
+          '<p class="field-hint">**不要以为「它退出了 = 它没干坏事」** —— 它可能只是先撤，等你放开再动手。</p>',
+          '<button data-act="ok">知道了</button>');
+        $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
+      } else if(!hits && G.tick <= 2){
+        termAppendBlock([["err", "…它跑得非常快而且什么都没碰 —— 也可能是空脚本，也可能是反 hook 后直接退了。拿不准就别信它"]]);
+      }
+      toast(anti ? "检测到反调试迹象，见弹窗" : (hits ? ("抓到 " + hits + " 处危险行为，详见终端") : "跑完了，没发现危险行为"));
       fin(); return;
     }
     if(++G.tick > 70){ termAppendBlock([["err", "…等了 70 秒还没结束，先不等了。去终端 ps -A | grep ksu_guard 看看"]]); fin(); return; }
@@ -4575,7 +4593,7 @@ function switchTab(tab){
   if(tab === "home") startClock(); else stopClock();
   if(tab === "device"){ clearInterval(timer); loadDF(); return; }
   if(tab === "app"){ clearInterval(timer); initApp(); startLoop(); return; }
-  if(tab === "thermal"){ clearInterval(timer); thermalBoot(); return; }
+  if(tab === "thermal"){ clearInterval(timer); thermalWarnOnce(); thermalBoot(); return; }
   if(tab === "perf") state.perfCache = null;
   refresh();
   startLoop();
@@ -4642,6 +4660,26 @@ async function initApp(){
   if(A.mode === "apps"){ if(!A.loadedApps) await loadApps(); }
   else await loadProcs();
 }
+/* 温控相关实测有 bug（触控），默认全关 + 只弹一次提醒 */
+function thermalWarnOnce(){
+  const p = prefs();
+  if(p.thermWarn === "1") return;
+  p.thermWarn = "1";
+  try{ localStorage.setItem(PREF_KEY, JSON.stringify(p)); }catch(e){}
+  openModal("⚠️ 温控这些开关，实测有 bug", "只提示这一次",
+    banner("warn", "不推荐开启",
+      "实测下来温控相关的选项会导致：**黑屏 / 死机 / 系统不稳定**。" +
+      "其中**触控已经有实测 bug**（这个还没修）。") +
+    '<section class="card row-list">' +
+      '<div class="row"><span>默认状态</span><strong class="ok">全部关闭</strong></div>' +
+      '<div class="row"><span>开机是否自动应用</span><strong>否（enabled=0 时直接 return）</strong></div>' +
+      '<div class="row"><span>风险</span><strong class="warn">黑屏 / 死机 / 触控失效</strong></div>' +
+    '</section>' +
+    '<p class="field-hint">这个提示只弹一次。除非你清楚代价，否则别开。</p>',
+    '<button data-act="ok">我知道了</button>');
+  $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
+}
+
 function withTokenAddr(){
   const egT = thermalState();
   const p = prefs();
