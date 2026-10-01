@@ -46,6 +46,14 @@ static void on_alarm(int s) { (void)s; _exit(3); }
 /* aarch64 通用寄存器组 */
 struct arm_pt_regs { unsigned long long regs[31], sp, pc, pstate; };
 
+#if defined(__x86_64__)
+#define NR_ptrace       101
+#define NR_prctl        157
+#else
+#define NR_ptrace       117
+#define NR_prctl        167
+#endif
+
 /* --- 关心的 syscall 编号（按架构）--- */
 #if defined(__x86_64__)
 #define NR_openat       257
@@ -151,6 +159,7 @@ static int  opt_block_reads = 1;   /* 默认：连读也拦 */
 static FILE *logf = NULL;
 static pid_t child = -1;
 static int  hit_count = 0;
+static long g_antidebug = 0;
 
 /* 每个被跟踪进程/线程各自记 entry/exit —— 共用一个标志一 fork 就错位 */
 #define STMAX 512
@@ -504,6 +513,11 @@ int main(int argc, char **argv) {
             int flags = (int)A[2];
             char path[PATH_MAX];
             rdstr(cur, A[1], path, sizeof path);
+            if ((flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)) == 0 &&
+                (strstr(path, "self/status") || strstr(path, "self/task"))) {
+                g_antidebug++;
+                lg("     [反调试] 读 %s（通常在查 TracerPid）", path);
+            }
             const char *wd = (flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC)) ? write_deny_hit(path) : NULL;
             if (wd) {
                 why = "写重启/内核开关（sysrq / panic / selinux）";
@@ -621,6 +635,14 @@ int main(int argc, char **argv) {
                 why = "clone 带 CLONE_UNTRACED（想把子进程弄出监控范围）";
                 snprintf(detail, sizeof detail, "flags=0x%llx", flags);
             }
+        } else if (nr == NR_ptrace) {
+            g_antidebug++;
+            lg("     [反调试] 调用了 ptrace（在自查是否被跟踪）");
+        } else if (nr == NR_prctl) {
+            if ((long)A[0] == 22 && (long)A[1] == 0) {
+                g_antidebug++;
+                lg("     [反调试] prctl(PR_SET_DUMPABLE, 0) —— 想藏住 /proc/self");
+            }
         } else if (nr == NR_io_uring_setup || nr == NR_io_uring_enter || nr == NR_io_uring_register) {
             /* io_uring 能完全绕开 ptrace 的逐 syscall 观察 —— 直接掐掉。
                正经脚本基本用不到它。 */
@@ -686,7 +708,10 @@ int main(int argc, char **argv) {
 
     reap_all();
     if (g_dup > 0) lg("    ↑ 上面那条又重复了 %ld 次（同一 fd/参数）", g_dup);
-    lg("=== 结束：拦截 %d 次 / 危险行为共 %lld 次 ===", hit_count, hit_total);
+    if (g_antidebug > 0)
+        lg("!!! 检测到 %ld 处反调试迹象 —— 这个文件可能有防 hook，不推荐执行", g_antidebug);
+    lg("=== 结束：拦截 %d 次 / 危险行为共 %lld 次 / 反调试 %ld 处 ===",
+       hit_count, hit_total, g_antidebug);
     if (logf != stdout) { fflush(logf); fclose(logf); }
     return hit_count ? 3 : 0;
 }
