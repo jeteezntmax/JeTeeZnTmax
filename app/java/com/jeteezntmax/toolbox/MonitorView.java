@@ -25,25 +25,37 @@ public class MonitorView extends View {
     private final Paint pLab = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pVal = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pDiv = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pBd  = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     private float density;
     private int measuredW = 0;
+    private float baseLab = 6.5f, baseVal = 9.5f;
+    private int userFg = 0, userBg = 0;      // 0 = 用默认
+    private String cfgRaw = "";
 
     public MonitorView(Context c) {
         super(c);
         density = c.getResources().getDisplayMetrics().density;
 
-        pBg.setColor(0xC9101418);
+        // 底色接近纯黑、几乎不透明 —— 浅色壁纸上也看得清
+        pBg.setColor(0xF2070A0F);
         pBg.setStyle(Paint.Style.FILL);
 
-        pLab.setColor(0xFF6E7A88);
-        pLab.setTextSize(sp(7));
-        pLab.setFakeBoldText(false);
+        // 一圈亮边，让它从任何背景上"浮"出来
+        pBd.setStyle(Paint.Style.STROKE);
+        pBd.setColor(0x59FFFFFF);
+        pBd.setStrokeWidth(dp(1));
 
-        pVal.setTextSize(sp(10));
+        // 标签提亮（原来是 0x6E7A88，太暗）
+        pLab.setColor(0xFFC8D2DE);
+        pLab.setTextSize(sp(6.5f));
+        pLab.setFakeBoldText(true);
+
+        pVal.setTextSize(sp(9.5f));
         pVal.setFakeBoldText(true);
+        pVal.setShadowLayer(dp(2), 0, dp(0.5f), 0xCC000000);
 
-        pDiv.setColor(0x33FFFFFF);
+        pDiv.setColor(0x44FFFFFF);
         pDiv.setStrokeWidth(dp(1));
     }
 
@@ -51,6 +63,57 @@ public class MonitorView extends View {
     private float sp(float v) { return v * getResources().getDisplayMetrics().scaledDensity; }
 
     public SysStats stats() { return st; }
+
+    /** 帧率不走 sysfs，由 Choreographer 数出来直接塞进来 */
+    public void setFps(double v) { st.fps = v; }
+
+    /** 用户自定义：fg=#RRGGBB;bg=#RRGGBB;size=1.0 */
+    public void applyConfig(String s) {
+        if (s == null) s = "";
+        if (s.equals(cfgRaw)) return;
+        cfgRaw = s;
+        float size = 1f;
+        int fg = 0, bg = 0;
+        for (String kv : s.split(";")) {
+            int e = kv.indexOf('=');
+            if (e <= 0) continue;
+            String k = kv.substring(0, e).trim().toLowerCase();
+            String v = kv.substring(e + 1).trim();
+            try {
+                if (k.equals("size")) { size = Float.parseFloat(v); }
+                else if (k.equals("fg")) { fg = parseColor(v); }
+                else if (k.equals("bg")) { bg = parseColor(v); }
+            } catch (Exception ignored) { }
+        }
+        if (size < 0.6f) size = 0.6f;
+        if (size > 2.0f) size = 2.0f;
+        baseLab = 6.5f * size;
+        baseVal = 9.5f * size;
+        userFg = fg;
+        userBg = bg;
+
+        if (userBg != 0) pBg.setColor(userBg);
+        else pBg.setColor(0xF2070A0F);
+        if (userFg != 0) {
+            pVal.setColor(userFg);          // 有自定义就所有值统一用它
+            pLab.setColor(withAlpha(userFg, 0.72f));
+        } else {
+            pLab.setColor(0xFFC8D2DE);
+        }
+        requestLayout();
+        invalidate();
+    }
+
+    private static int parseColor(String v) {
+        v = v.trim();
+        if (v.startsWith("#")) v = v.substring(1);
+        if (v.length() == 6) return 0xFF000000 | (int) Long.parseLong(v, 16);
+        if (v.length() == 8) return (int) Long.parseLong(v, 16);
+        return 0;
+    }
+    private static int withAlpha(int c, float a) {
+        return ((int) (a * 255) << 24) | (c & 0x00FFFFFF);
+    }
 
     /** 后台线程采完样后调 */
     public void pushSample() { invalidate(); }
@@ -79,7 +142,7 @@ public class MonitorView extends View {
     }
     private String tempText() {
         if (st.tempC < 0) return "--";
-        return String.format("%.1f°C", st.tempC);
+        return String.format("%.1f°", st.tempC);
     }
 
     private int colorOf(int idx) {
@@ -108,10 +171,10 @@ public class MonitorView extends View {
     /* ---------- 尺寸：按文字实际宽度算 ---------- */
     private float layoutWidth() {
         String[][] it = items();
-        float pad = dp(11), gap = dp(9), divW = dp(5);
+        float pad = dp(7), gap = dp(5), divW = dp(3);
         float w = pad * 2;
         for (int i = 0; i < it.length; i++) {
-            w += pLab.measureText(it[i][0]) + dp(3) + pVal.measureText(it[i][1]);
+            w += pLab.measureText(it[i][0]) + dp(2) + pVal.measureText(it[i][1]);
             if (i < it.length - 1) w += gap * 2 + divW;
         }
         return w;
@@ -119,9 +182,24 @@ public class MonitorView extends View {
 
     @Override
     protected void onMeasure(int wSpec, int hSpec) {
+        // 屏幕宽度留 6dp 边距，另外给左右各留一点（免得贴边）
         int maxW = getResources().getDisplayMetrics().widthPixels - (int) dp(8);
-        int w = (int) Math.min(layoutWidth(), maxW);
-        int h = (int) dp(26);
+
+        pLab.setTextSize(sp(baseLab));
+        pVal.setTextSize(sp(baseVal));
+        float natural = layoutWidth();
+
+        // 放不下就整体按比例缩字号 —— 绝不裁切（上一版"温度穿模"就是裁出来的）
+        if (natural > maxW) {
+            float k = maxW / natural;
+            if (k < 0.55f) k = 0.55f;
+            pLab.setTextSize(sp(baseLab) * k);
+            pVal.setTextSize(sp(baseVal) * k);
+            natural = layoutWidth();
+        }
+        int w = (int) Math.ceil(natural);
+        if (w > maxW) w = maxW;
+        int h = (int) dp(23);
         measuredW = w;
         setMeasuredDimension(resolveSize(w, wSpec), resolveSize(h, hSpec));
     }
@@ -129,10 +207,14 @@ public class MonitorView extends View {
     @Override
     protected void onDraw(Canvas cv) {
         float W = getWidth(), H = getHeight();
-        cv.drawRoundRect(new RectF(0, 0, W, H), H / 2f, H / 2f, pBg);
+        float r = H / 2f;
+        // 外圈一层更暗的描边当"阴影"，勉强算是浮起来
+        RectF shadow = new RectF(dp(1), dp(1), W - dp(1), H - dp(1));
+        cv.drawRoundRect(shadow, r, r, pBg);
+        cv.drawRoundRect(shadow, r, r, pBd);
 
         String[][] it = items();
-        float pad = dp(11), gap = dp(9), divW = dp(5);
+        float pad = dp(7), gap = dp(5), divW = dp(3);
         float baseline = H / 2f + pVal.getTextSize() / 2.6f;
         float x = pad;
 
@@ -140,13 +222,13 @@ public class MonitorView extends View {
             pLab.setTextAlign(Paint.Align.LEFT);
             pVal.setTextAlign(Paint.Align.LEFT);
             cv.drawText(it[i][0], x, baseline, pLab);
-            x += pLab.measureText(it[i][0]) + dp(3);
-            pVal.setColor(colorOf(i));
+            x += pLab.measureText(it[i][0]) + dp(2);
+            pVal.setColor(userFg != 0 ? userFg : colorOf(i));   // 自定义优先
             cv.drawText(it[i][1], x, baseline, pVal);
             x += pVal.measureText(it[i][1]);
             if (i < it.length - 1) {
                 x += gap;
-                cv.drawLine(x + divW / 2, H * 0.28f, x + divW / 2, H * 0.72f, pDiv);
+                cv.drawLine(x + divW / 2, H * 0.26f, x + divW / 2, H * 0.74f, pDiv);
                 x += divW + gap;
             }
         }
