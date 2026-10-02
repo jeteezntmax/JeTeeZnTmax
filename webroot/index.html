@@ -1711,12 +1711,17 @@ function clip(s, n){
   n = n || 120000;
   return s.length > n ? s.slice(0, n) + "\n… [输出过长，已截断 " + (s.length - n) + " 字符]" : s;
 }
-async function runCmd(cmd, label){
+async function runCmd(cmd, label, display){
   cmd = String(cmd || "").trim();
   if(!cmd) return;
-  pushHist(cmd);
+  /* display = 给人看的简短形式。
+     内部命令经常是一大串 if/elif/else/fi（比如"执行文件"那段），
+     原样回显会把终端刷满没人看得懂的东西。
+     有 display 就只显示它 —— 历史记录也存它（内部的没人会想重跑）。 */
+  const shown = (display != null && String(display).trim()) ? String(display).trim() : cmd;
+  pushHist(shown);
   termHi = -1;
-  termLog("cmd", (label ? "# " + label + "\n" : "") + "$ " + cmd);
+  termLog("cmd", (label ? "# " + label + "\n" : "") + "$ " + shown);
   const btn = $("termRun");
   if(btn) btn.disabled = true;
   const t0 = Date.now();
@@ -1786,13 +1791,13 @@ function initTerm(){
       `elif [ -f "$P" ]; then echo "[执行] $P"; chmod 755 "$P" 2>/dev/null; ` +
       `if [ -x "$P" ]; then "$P"; else echo "[非可执行，改用 sh 运行]"; sh "$P"; fi; echo "[退出码] $?"; ` +
       `else echo "[错误] 路径不存在：$P"; fi`;
-    runCmd(cmd, "执行文件");
+    runCmd(cmd, "执行文件", p);
   });
   const fl = $("fileList");
   if(fl) fl.addEventListener("click", () => {
     const p = ($("filePath").value || "").trim();
     if(!p){ toast("先填一个路径"); return; }
-    runCmd(`P=${shq(p)}; if [ -e "$P" ]; then ls -ld "$P"; stat -c "%n %s bytes 权限%a 属主%U:%G 修改%y" "$P" 2>/dev/null || ls -l "$P"; file "$P" 2>/dev/null; else echo "[错误] 路径不存在：$P"; fi`, "文件信息");
+    runCmd(`P=${shq(p)}; if [ -e "$P" ]; then ls -ld "$P"; stat -c "%n %s bytes 权限%a 属主%U:%G 修改%y" "$P" 2>/dev/null || ls -l "$P"; file "$P" 2>/dev/null; else echo "[错误] 路径不存在：$P"; fi`, "文件信息", p);
   });
   const ls = $("fileLs");
   if(ls) ls.addEventListener("click", () => {
