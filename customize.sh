@@ -106,3 +106,24 @@ fi
 if [ -d /data/adb/modules/device_faker ] || [ -d /data/adb/modules_update/device_faker ]; then
     ui_print "! 检测到独立安装的 device_faker，请把它停用或卸载"
 fi
+
+# ============================================================
+#  自动装桌面 App + 免手动授权
+#  App 本来就有 root —— 「显示在其他应用上层」用 appops 直接给，
+#  没必要让用户再手点一遍权限页。
+# ============================================================
+PKG=com.jeteezntmax.toolbox
+APP="$MODPATH/app/JeTeeZnTmax.apk"
+if [ -f "$APP" ]; then
+    ui_print "- 安装桌面 App"
+    pm install -r "$APP" >/dev/null 2>&1 || pm install -r -d "$APP" >/dev/null 2>&1
+    sleep 2
+    for op in SYSTEM_ALERT_WINDOW POST_NOTIFICATION RUN_IN_BACKGROUND RUN_ANY_IN_BACKGROUND; do
+        appops set $PKG $op allow >/dev/null 2>&1
+    done
+    if pm path $PKG >/dev/null 2>&1; then
+        ui_print "- 桌面 App 已装好，悬浮窗权限已自动给"
+    else
+        ui_print "! 桌面 App 没装上，去设置页手动装一下"
+    fi
+fi
