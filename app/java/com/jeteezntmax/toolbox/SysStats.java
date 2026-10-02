@@ -26,6 +26,7 @@ public class SysStats {
     public String gpuName = "--";
     public String tempName = "--";
     public double fps = -1;
+    public double cpuUsage = -1;     // 0~100，从 /proc/stat 两次采样算
 
     /* ---------- 基础 ---------- */
     static String read(String path) {
@@ -199,6 +200,32 @@ public class SysStats {
         else tempC = -1;
     }
 
+    /* ---------- CPU 利用率（/proc/stat 两次采样） ---------- */
+    private long prevTotal = -1, prevIdle = -1;
+
+    private void readCpuUsage() {
+        String line = read("/proc/stat");          // 第一行就是总的 "cpu  ..."
+        if (line == null || !line.startsWith("cpu")) return;
+        String[] f = line.trim().split("\\s+");
+        if (f.length < 6) return;
+        long total = 0, idle = 0;
+        try {
+            for (int i = 1; i < f.length && i < 9; i++) total += Long.parseLong(f[i]);
+            idle = Long.parseLong(f[4]) + (f.length > 5 ? Long.parseLong(f[5]) : 0); // idle + iowait
+        } catch (Exception e) { return; }
+        if (prevTotal > 0 && total > prevTotal) {
+            long dt = total - prevTotal, di = idle - prevIdle;
+            if (dt > 0) {
+                double u = (dt - di) * 100.0 / dt;
+                if (u < 0) u = 0;
+                if (u > 100) u = 100;
+                cpuUsage = u;
+            }
+        }
+        prevTotal = total;
+        prevIdle = idle;
+    }
+
     /* ---------- 帧率（唯一要走 su 的） ---------- */
     private static final String FPS_SH =
             "L=$(dumpsys SurfaceFlinger --list 2>/dev/null | grep -E 'SurfaceView|Activity|#0' | tail -1); " +
@@ -232,6 +259,7 @@ public class SysStats {
     /* ---------- 一次全采 ---------- */
     public void sample(String suBin) {
         if (cores <= 0) detectCores();
+        readCpuUsage();
         readCpu();
         readGpu();
         readPower();
