@@ -177,26 +177,56 @@ static int *st_for(pid_t p) {
 }
 static void st_drop(pid_t p) { for (int i = 0; i < STMAX; i++) if (g_st[i].pid == p) { g_st[i].pid = 0; g_st[i].in = 0; } }
 
-/* dd 这种一块一块读写的，同一条会刷几十万次 —— 日志会爆、fflush 会把目标拖死。
-   同一个 (syscall, 参数) 3 秒内只记第一条，重复的累加计数。 */
-static long long g_last_sig = 0;
-static long g_dup = 0;
-static time_t g_last_t = 0;
-static long long hit_total = 0;
-#define HIT_LOG_MAX 400
+/* ── 日志去重 + 限速 + 封顶 ────────────────────────────────
+   dd 这种一块一块读写的，同一条会刷几十万次。
 
-/* 返回 1 = 这是重复的，调用方【什么都别输出】。
-   返回 0 = 新的一条；此时 *pending 是上一轮攒下的重复次数（只报一次）。
-   关键：重复期间一个字都不能写日志，否则跟不去重没区别 —— 就是踩过这个坑。 */
-static int is_repeat(long long sig, long *pending) {
+   ⚠ 上一版的坑：只记「最后一个签名」。
+     可程序是在 read / lseek / ioctl / openat 之间来回切的，
+     签名每隔一次就变，g_last_sig 一直被顶掉 —— 去重永远不命中，
+     于是 dd 每读一块就写一行（用户实测每 500KB 一行，卡死）。
+     所以改成【一张表】，记住最近 SIGTAB 条签名。
+
+   另外两道保险：
+     · 全局限速：不管什么情况，每秒最多 RATE_MAX 行
+     · 总行数封顶：写到 LOG_MAX 行就只计数、不再写文件         */
+#define SIGTAB   64
+#define SIG_WIN  30          /* 同一条签名 30 秒内都算重复 */
+#define LOG_MAX  3000        /* 日志最多这么多行 */
+#define RATE_MAX 8           /* 全局最多每秒 8 行 */
+
+static struct { long long sig; time_t t; long cnt; } g_sig[SIGTAB];
+static int  g_sig_n  = 0;
+static int  g_sig_rr = 0;
+static long g_dup_total = 0;
+static long long hit_total = 0;
+static long g_log_lines = 0;
+static time_t g_rate_t = 0;
+static int  g_rate_n = 0;
+
+/* 返回 1 = 重复，调用方【什么都别输出】 */
+static int is_repeat(long long sig) {
     time_t now = time(NULL);
-    *pending = 0;
-    if (sig == g_last_sig && (now - g_last_t) <= 3) { g_dup++; return 1; }
-    *pending = g_dup;
-    g_dup = 0;
-    g_last_sig = sig;
-    g_last_t = now;
+    for (int i = 0; i < g_sig_n; i++) {
+        if (g_sig[i].sig == sig && (now - g_sig[i].t) <= SIG_WIN) {
+            g_sig[i].cnt++; g_sig[i].t = now; g_dup_total++;
+            return 1;
+        }
+    }
+    int idx;
+    if (g_sig_n < SIGTAB) idx = g_sig_n++;
+    else { idx = g_sig_rr; g_sig_rr = (g_sig_rr + 1) % SIGTAB; }
+    g_sig[idx].sig = sig; g_sig[idx].t = now; g_sig[idx].cnt = 0;
     return 0;
+}
+
+/* 全局限速 + 封顶。返回 0 = 这一行不用写了 */
+static int rate_ok(void) {
+    time_t now = time(NULL);
+    if (now != g_rate_t) { g_rate_t = now; g_rate_n = 0; }
+    if (g_log_lines >= LOG_MAX) return 0;
+    if (g_rate_n >= RATE_MAX) return 0;
+    g_rate_n++; g_log_lines++;
+    return 1;
 }
 static void lg_raw(const char *fmt, ...) {
     if (!logf) return;
@@ -691,12 +721,13 @@ int main(int argc, char **argv) {
         if (why) {
             hit_total++;
             long long sig = (long long)nr * 1000003LL + (long long)(A[0] & 0xFFFF);
-            long pending = 0;
-            if (!is_repeat(sig, &pending)) {
-                if (pending > 0) lg("    ↑ 上面那条又重复了 %ld 次（同一 fd/参数）", pending);
-                if (hit_total <= HIT_LOG_MAX) lg("!! %s  pid=%d  %s", why, cur, detail);
-                else if (hit_total == HIT_LOG_MAX + 1)
-                    lg("!! 命中超过 %d 次，后面不再逐条记。总数在结尾。", HIT_LOG_MAX);
+            if (!is_repeat(sig)) {
+                if (g_log_lines < LOG_MAX) {
+                    if (rate_ok()) lg("!! %s  pid=%d  %s", why, cur, detail);
+                } else if (g_log_lines == LOG_MAX) {
+                    g_log_lines++;
+                    lg("!! 日志已达 %d 行上限，后面只计数、不再写文件。", LOG_MAX);
+                }
             }
             if (opt_kill) {
                 kill_tree(child);      /* 杀整组，含它 fork 出来的 */
@@ -707,7 +738,10 @@ int main(int argc, char **argv) {
     }
 
     reap_all();
-    if (g_dup > 0) lg("    ↑ 上面那条又重复了 %ld 次（同一 fd/参数）", g_dup);
+    if (g_dup_total > 0)
+        lg("    ↑ 共有 %ld 次重复命中被折叠（同一 fd/参数 %d 秒内只记一条）", g_dup_total, SIG_WIN);
+    if (hit_total > 0)
+        lg("    ↑ 实际危险 syscall 共 %lld 次，日志只展开了 %ld 行", hit_total, g_log_lines);
     if (g_antidebug > 0)
         lg("!!! 检测到 %ld 处反调试迹象 —— 这个文件可能有防 hook，不推荐执行", g_antidebug);
     lg("=== 结束：拦截 %d 次 / 危险行为共 %lld 次 / 反调试 %ld 处 ===",
