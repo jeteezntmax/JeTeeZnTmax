@@ -29,6 +29,11 @@ public class MonitorActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // 重置位置：把存下来的坐标清掉，服务起来就会回到默认位置
+        if (getIntent() != null && getIntent().getBooleanExtra("reset", false)) {
+            getSharedPreferences("monitor", MODE_PRIVATE).edit().clear().apply();
+            Toast.makeText(this, "悬浮窗位置已重置", Toast.LENGTH_SHORT).show();
+        }
         if (MonitorService.canOverlay(this)) { go(); return; }
 
         // ① 先用 root 自己把权限开了（这一步通常就成功）
