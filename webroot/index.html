@@ -1255,6 +1255,16 @@ function perfHTML(){
       ${gaugeHTML("gGpu", "GPU")}
       ${gaugeHTML("gMem", "内存")}
     </div>
+    <div class="section-head"><h2>迷你监视器</h2><span class="hint">悬浮窗</span></div>
+    <section class="card file-card">
+      <label>把实时数据浮在所有应用上面</label>
+      <div class="tagrow">
+        <button class="chip-btn" id="monOpen">打开悬浮窗</button>
+        <button class="chip-btn" id="monClose">关闭</button>
+        <button class="chip-btn" id="monCheck">检测状态</button>
+      </div>
+      <p class="field-hint" id="monHint">点「检测状态」看看桌面 App 装了没。</p>
+    </section>
     <section class="card spark-card">
       <div class="spark-head"><strong>CPU 占用趋势</strong><span id="sparkCpuInfo">采样中…</span></div>
       <svg class="spark" id="sparkCpu" viewBox="0 0 100 40" preserveAspectRatio="none">
@@ -4510,6 +4520,57 @@ function guardInit(){
 }
 
 /* ============================================================
+ *  11.8 迷你监视器悬浮窗
+ *
+ *  悬浮窗本身是桌面 App 画的（TYPE_APPLICATION_OVERLAY），
+ *  这里只负责用 root 发启动 / 停止指令。
+ * ============================================================ */
+const MON_PKG = "com.jeteezntmax.toolbox";
+const MON_STOP_ACTION = MON_PKG + ".STOP_MONITOR";
+
+async function monCheck(){
+  const h = $("monHint");
+  let installed = false;
+  try{
+    const r = await sh("pm list packages " + MON_PKG + " 2>/dev/null", 15000);
+    installed = String(r.stdout || "").indexOf("package:" + MON_PKG) >= 0;
+  }catch(e){}
+  if(h) h.textContent = installed
+    ? "已装桌面 App。悬浮窗显示：8 个核心的频率曲线 │ GPU 频率 │ 帧率 │ 功耗 │ 温度，每 2 秒刷新一次。位置可拖动，长按可关闭。"
+    : "还没装桌面 App —— 去「设置 → 桌面 App」装一下再来。";
+  return installed;
+}
+async function monOpen(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  if(!(await monCheck())) return;
+  busy(true, "正在启动悬浮窗");
+  try{
+    const r = await sh("am start -n " + MON_PKG + "/.MonitorActivity 2>&1", 25000);
+    const out = String(r.stdout || "").trim();
+    if(/Error|Exception|does not exist/i.test(out))
+      toast("启动失败：" + out.slice(0, 90));
+    else
+      toast("已发送启动指令 —— 第一次会要「显示在其他应用上层」权限");
+  }catch(e){
+    toast("出错：" + ((e && e.message) || e));
+  }finally{ busy(false); }
+}
+async function monClose(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  let out = "";
+  try{
+    let r = await sh("am startservice -n " + MON_PKG + "/.MonitorService -a " + MON_STOP_ACTION + " 2>&1", 20000);
+    out = String(r.stdout || "").trim();
+    if(/Error|Exception|not found|Unknown/i.test(out)){
+      r = await sh("am start-foreground-service -n " + MON_PKG + "/.MonitorService -a " + MON_STOP_ACTION + " 2>&1", 20000);
+      out = String(r.stdout || "").trim();
+    }
+  }catch(e){}
+  if(/Error|Exception/i.test(out)) toast("关不掉就别用指令了 —— 长按悬浮窗直接关，或者点通知里的「停止」");
+  else toast("已发送关闭指令");
+}
+
+/* ============================================================
  *  12. 模态框 / Toast / 调度
  * ============================================================ */
 function openModal(title, sub, bodyHTML, footerHTML){
@@ -4710,6 +4771,12 @@ function init(){
     if(b && b.dataset.tab !== state.tab) switchTab(b.dataset.tab);
   });
   $("menuBtn").addEventListener("click", openMenu);
+  $("content").addEventListener("click", e => {
+    const id = e.target && e.target.id;
+    if(id === "monOpen") monOpen();
+    else if(id === "monClose") monClose();
+    else if(id === "monCheck") monCheck();
+  });
   $("content").addEventListener("click", e => {
     const seg = e.target.closest("#amSeg button");
     if(seg){
