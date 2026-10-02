@@ -4501,13 +4501,33 @@ function pollGuard(){
 let guardShown = "";
 function renderGuardOut(txt){
   if(txt === guardShown) return;
-  const prev = guardShown.split("\n");
-  const now = txt.split("\n");
-  const fresh = now.slice(prev.length);
   guardShown = txt;
-  const rows = [];
-  for(const L of fresh){ if(L) rows.push([/!!/.test(L) ? "err" : "ok", L]); }
-  if(rows.length) termAppendBlock(rows);
+
+  /* ⚠ 不能用「增量追加」——
+     这里是 tail -n 250，日志一超过 250 行窗口就开始滑动，
+     prev.length 和 now 的行数对不上，算出来的增量是错的；
+     而且每 1.2 秒追加一次，DOM 会一直涨。
+     所以改成：整块替换 + 只渲染最后 120 行。 */
+  let el = $("guardLive");
+  if(!el){
+    el = document.createElement("div");
+    el.id = "guardLive";
+    const host = $("termOut");
+    if(!host) return;
+    host.appendChild(el);
+  }
+  const lines = txt.split("\n").filter(Boolean).slice(-120);
+  const frag = document.createDocumentFragment();
+  for(const L of lines){
+    const d = document.createElement("div");
+    d.className = /!!/.test(L) ? "err" : "ok";
+    d.textContent = L;
+    frag.appendChild(d);
+  }
+  el.textContent = "";
+  el.appendChild(frag);
+  const host = $("termOut");
+  if(host) host.scrollTop = host.scrollHeight;
 }
 async function guardShowLog(){
   // 两个日志都要看：运行日志（外层脚本）+ guard 自己写的日志（它卡在哪一步）
