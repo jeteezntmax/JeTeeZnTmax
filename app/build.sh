@@ -7,9 +7,9 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SDK=/workspace/.sdk
-AJAR=$SDK/a25.jar
+AJAR=$SDK/a34.jar
 R8=$SDK/r8.jar
-BT=/usr/lib/android-sdk/build-tools/29.0.3
+BT=/usr/lib/android-sdk/build-tools/debian
 OUT=$HERE/out
 
 [ -f "$AJAR" ] || { echo "缺 android.jar：$AJAR"; exit 1; }
