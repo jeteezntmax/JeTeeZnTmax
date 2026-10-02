@@ -4536,7 +4536,7 @@ async function monCheck(){
     installed = String(r.stdout || "").indexOf("package:" + MON_PKG) >= 0;
   }catch(e){}
   if(h) h.textContent = installed
-    ? "已装桌面 App。悬浮窗显示：8 个核心的频率曲线 │ GPU 频率 │ 帧率 │ 功耗 │ 温度，每 2 秒刷新一次。位置可拖动，长按可关闭。"
+    ? "已装桌面 App。悬浮窗是屏幕正上方居中的小条，显示：CPU 利用率 │ 帧率 │ 功耗 │ 温度，每 2 秒刷新。可拖动，长按关闭。权限已由 root 自动给，不用手动点。"
     : "还没装桌面 App —— 去「设置 → 桌面 App」装一下再来。";
   return installed;
 }
