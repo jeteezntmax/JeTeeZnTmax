@@ -286,6 +286,11 @@ html.no-dock .view{padding-bottom:4px}
 .chk .cd{color:var(--text-3);font:9px/1.4 var(--mono);text-align:right;max-width:52%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mark{position:relative;overflow:hidden}
 .mark img{position:absolute;inset:0;width:100%;height:100%;display:block;object-fit:cover;border-radius:inherit}
+input[type=color]{-webkit-appearance:none;appearance:none;border:none;padding:0;background:none;width:34px;height:34px;flex:0 0 34px;border-radius:50%;overflow:hidden;box-shadow:inset 0 0 0 2px var(--border-hi)}
+input[type=color]::-webkit-color-swatch-wrapper{padding:0}
+input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
+.cpick{display:flex;align-items:center;gap:8px;flex:1}
+.cpick span{color:var(--text-2);font-size:11px}
 .psearch{position:sticky;bottom:calc(92px + env(safe-area-inset-bottom,0));z-index:60;display:flex;gap:8px;align-items:center;padding:8px 10px 8px 14px;border:1px solid var(--border-hi);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.09),transparent 45%),var(--glass-strong);box-shadow:var(--shadow);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%)}
 .psearch .term-input{height:36px}
 .psearch .term-run{height:36px}
@@ -1248,6 +1253,9 @@ function gaugeHTML(id, label){
     <div class="gs" id="${id}Sub">--</div>
   </div>`;
 }
+function monInitPerf(){
+  setTimeout(() => { if($("monFg")) monLoadCfg(); }, 100);
+}
 function perfHTML(){
   return `<div class="view">
     <div class="gauge-grid">
@@ -1264,6 +1272,21 @@ function perfHTML(){
         <button class="chip-btn" id="monCheck">检测状态</button>
       </div>
       <p class="field-hint" id="monHint">点「检测状态」看看桌面 App 装了没。</p>
+      <label style="margin-top:10px">外观</label>
+      <div class="file-row">
+        <div class="cpick"><input type="color" id="monFg" value="#e8ecf2"><span>文字</span></div>
+        <div class="cpick"><input type="color" id="monBg" value="#070a0f"><span>背景</span></div>
+      </div>
+      <div class="file-row" style="align-items:center">
+        <span style="color:var(--text-2);font-size:11px">字号</span>
+        <input type="range" id="monSize" min="0.6" max="2" step="0.1" value="1" style="flex:1">
+        <span id="monSizeVal" style="color:var(--blue);font:600 11px var(--mono);width:38px;text-align:right">1.0×</span>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="monSave">保存外观</button>
+        <button class="chip-btn" id="monResetCfg">重置外观</button>
+        <button class="chip-btn" id="monResetPos">重置悬浮窗位置</button>
+      </div>
     </section>
     <section class="card spark-card">
       <div class="spark-head"><strong>CPU 占用趋势</strong><span id="sparkCpuInfo">采样中…</span></div>
@@ -1432,6 +1455,37 @@ function parseThermal(s){
  * ============================================================ */
 function powerHTML(){
   return `<div class="view">
+    <div class="section-head"><h2>充电控制</h2><span class="hint" id="chgCapHint">读取中…</span></div>
+    <section class="card file-card">
+      <div class="row-list" id="chgStatus"></div>
+      <label style="margin-top:8px">充电上限 —— 到点自动停充</label>
+      <div class="file-row" style="align-items:center">
+        <input type="range" id="chgLimit" min="0" max="100" step="5" value="80" style="flex:1">
+        <span id="chgLimitVal" style="color:var(--blue);font:600 12px var(--mono);width:42px;text-align:right">80%</span>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="chgLimitSet">设为上限</button>
+        <button class="chip-btn" id="chgLimitOff">关闭上限</button>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="chgSuspend">停充</button>
+        <button class="chip-btn" id="chgResume">恢复充电</button>
+        <button class="chip-btn" id="chgSlowToggle">慢充 开/关</button>
+      </div>
+      <label style="margin-top:8px">充电功率上限（mW，留空=默认）</label>
+      <div class="file-row">
+        <input class="modern-input" id="chgPower" placeholder="例如 30000" inputmode="numeric" autocomplete="off">
+        <button class="action-btn primary" id="chgPowerSet">设置</button>
+      </div>
+      <p class="field-hint" id="chgNote">按厂商探测节点；找不到就显示「不支持」，绝不瞎写。</p>
+      <label>充电节点各家都不一样，先扫描一下你这台有什么</label>
+      <div class="tagrow">
+        <button class="chip-btn" id="chgProbe">扫描充电节点</button>
+        <button class="chip-btn" id="chgShow">看上次结果</button>
+      </div>
+      <p class="field-hint" id="chgHint">扫完把结果发我，我按你的机型把控制项做出来。</p>
+    </section>
+
     <section class="card hero" id="powerHero">
       <div class="hero-mark" id="pwMark">⚡</div>
       <div class="hero-body">
@@ -1589,6 +1643,8 @@ function termHTML(){
       </div>
       <div class="log-body" id="termOut"></div>
     </div>
+
+
     <div class="section-head"><h2>受保护的执行</h2><span class="hint">ptrace 拦截</span></div>
     <section class="card file-card">
       <label>要跑的东西 —— 会在 ptrace 监督下执行</label>
@@ -3569,6 +3625,12 @@ function settingsHTML(){
     <p class="field-hint">浏览器里是<b>只读模式</b>：能看实时数据（来自后台每 6 秒生成一次的快照），
     但开关、保存、终端这些写操作要在 KernelSU 里打开才行。</p>
 
+    <div class="section-head" style="margin-top:2px"><h2>更新</h2></div>
+    <div class="tagrow" style="padding:2px 4px 0">
+      <button class="chip-btn" id="updCheck">检测更新</button>
+    </div>
+    <p class="field-hint">拉到的是 update.json。国内走 jsDelivr，一般通。</p>
+
     <div class="section-head" style="margin-top:2px"><h2>桌面 App</h2><span class="hint">可选</span></div>
     <section class="card row-list">
       <div class="row"><span>状态</span><strong class="${appInstalled() ? "ok" : ""}">${appInstalled() ? "已安装" : "未安装"}</strong></div>
@@ -4570,6 +4632,176 @@ async function monClose(){
   else toast("已发送关闭指令");
 }
 
+const MON_CONF = "/data/adb/ksu_toolbox/monitor.conf";
+
+/* ---- 检测更新：直接 fetch，不走 shell（Android 上没有 curl/wget） ---- */
+const UPDATE_JSON = "https://cdn.jsdelivr.net/gh/jeteezntmax/JeTeeZnTmax@main/update.json";
+const CHG_LOG = "/data/local/tmp/chg-probe.txt";
+const CHG_SH = "/data/adb/modules/ksu_toolbox/bin/chg.sh";
+
+function chgCmd(){
+  return 'B=""; for c in ' + CHG_SH + ' /data/adb/modules_update/ksu_toolbox/bin/chg.sh; do [ -f "$c" ] && B="$c" && break; done; ' +
+         '[ -z "$B" ] && { echo "nodir"; exit 1; }; sh "$B" ';
+}
+async function chgRun(args, timeout){
+  if(thermalState().demo){ toast("演示模式：未执行"); return "demo"; }
+  const r = await sh(chgCmd() + args + " 2>&1", timeout || 25000);
+  return String(r.stdout || "").trim();
+}
+async function chgStatus(){
+  const st = $("chgStatus"), hint = $("chgCapHint");
+  if(!st) return;
+  const raw = await chgRun("status");
+  if(raw === "nodir"){ if(hint) hint.textContent = "没找到 chg.sh"; return; }
+  const kv = parseKV(raw);
+  const num = (v, d) => { const n = parseFloat(v); return isFinite(n) ? n : d; };
+  const cap = num(kv.cap, 0);
+  const volt = num(kv.volt, 0) / 1e6;
+  const cur = Math.abs(num(kv.curr, 0)) / 1000;
+  const watt = volt * cur / 1000;
+  const temp = num(kv.temp, 0) / 10;
+  const susp = kv.mmi === "0";
+  const up = String(kv.limit || "").split(",");
+  const limOn = up.length >= 5 && up[2] === "1";
+  const limVal = up.length >= 5 ? up[3] : "--";
+  st.dataset.slow = String(kv.slow || "").split(",")[0] === "1" ? "1" : "0";
+  st.innerHTML =
+    '<div class="row"><span>状态</span><strong class="' + (susp ? "warn" : "ok") + '">' +
+      esc(susp ? "已停充" : (kv.stat || "--")) + '</strong></div>' +
+    '<div class="row"><span>电量</span><strong>' + cap.toFixed(0) + '%</strong></div>' +
+    '<div class="row"><span>功率</span><strong>' + watt.toFixed(2) + ' W（' + volt.toFixed(2) + 'V · ' + cur.toFixed(0) + 'mA）</strong></div>' +
+    '<div class="row"><span>温度</span><strong>' + temp.toFixed(1) + ' ℃</strong></div>' +
+    '<div class="row"><span>充电上限</span><strong class="' + (limOn ? "ok" : "") + '">' +
+      (limOn ? ("已开 · " + esc(limVal) + "%") : "未开") + '</strong></div>' +
+    '<div class="row"><span>适配器</span><strong>' + esc((num(kv.apwr,0)/1000).toFixed(1)) + ' W</strong></div>';
+  if(hint) hint.textContent = "已连上 · " + (kv.icl ? ("限流 " + (num(kv.icl,0)/1000).toFixed(0) + "mA") : "—");
+}
+async function chgAct(label, args, done){
+  busy(true, label);
+  try{
+    const out = await chgRun(args, 30000);
+    if(out === "demo") return;
+    if(/unsupported/.test(out)) toast("你这台不支持这一项（节点不存在或只读）");
+    else if(/write-fail/.test(out)) toast("写失败 —— 节点不可写或被 SELinux 拦了");
+    else if(/bad-arg/.test(out)) toast("参数不对");
+    else toast((done || "好了") + "：" + out.slice(0, 70));
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+  finally{ busy(false); }
+  await chgStatus();
+}
+
+function chgBin(){
+  return '/data/adb/modules/ksu_toolbox/bin/chg-probe.sh';
+}
+async function chgProbe(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  busy(true, "扫描中…");
+  try{
+    const r = await sh(
+      'B=""; for c in ' + chgBin() + ' /data/adb/modules_update/ksu_toolbox/bin/chg-probe.sh; do [ -f "$c" ] && B="$c" && break; done; ' +
+      'if [ -z "$B" ]; then echo "找不到 chg-probe.sh"; else sh "$B" 2>&1; fi | tee ' + shq(CHG_LOG), 60000);
+    const out = String(r.stdout || "");
+    openModal("充电节点扫描结果", "每一行 = 一个候选节点 的当前值 和 可写性",
+      '<div class="logbox" style="max-height:64vh;white-space:pre-wrap">' + esc(out || "(空)") + "</div>",
+      '<button data-act="ok">关闭</button>');
+    $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
+    const h = $("chgHint"); if(h) h.textContent = "扫完了。把弹窗里的内容发我（或者点「看上次结果」再截一次）。";
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+  finally{ busy(false); }
+}
+async function chgShow(){
+  const r = await sh("cat " + shq(CHG_LOG) + " 2>/dev/null || echo '(还没扫过)'", 15000);
+  openModal("充电节点 · 上次结果", CHG_LOG,
+    '<div class="logbox" style="max-height:64vh;white-space:pre-wrap">' + esc(r.stdout || "(空)") + "</div>",
+    '<button data-act="ok">关闭</button>');
+  $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
+}
+
+async function checkUpdate(){
+  busy(true, "检查更新中…");
+  try{
+    const res = await fetch(UPDATE_JSON + "?t=" + Date.now(), {cache: "no-store"});
+    if(!res.ok) throw new Error("HTTP " + res.status);
+    const j = await res.json();
+    const mi = state.moduleInfo || {};
+    const curVC = parseInt(mi.versionCode || "0", 10) || 0;
+    const newVC = parseInt(j.versionCode || "0", 10) || 0;
+    const newer = newVC > curVC;
+    openModal(newer ? "🎉 有新版本" : "已是最新", "当前 " + (mi.version || "?") + " · versionCode " + curVC,
+      '<section class="card row-list">' +
+        '<div class="row"><span>最新版本</span><strong class="' + (newer ? "ok" : "") + '">' + esc(j.version || "?") + '</strong></div>' +
+        '<div class="row"><span>versionCode</span><strong>' + esc(String(newVC)) + '</strong></div>' +
+        (j.date ? '<div class="row"><span>发布</span><strong>' + esc(j.date) + '</strong></div>' : "") +
+      '</section>' +
+      (j.changelog ? '<div class="section-head"><h2>更新内容</h2></div><div class="logbox" style="max-height:26vh" id="updLog">读取中…</div>' : "") +
+      (newer ? banner("warn", "下载地址", esc(j.zipUrl || "（没配）") + "　→ 复制到浏览器/下载器打开") : ""),
+      newer ? '<button data-act="dl">用浏览器打开下载</button><button data-act="ok">关闭</button>'
+            : '<button data-act="ok">关闭</button>');
+    const f = $("modalFooter");
+    f.querySelector('[data-act="ok"]').onclick = closeModal;
+    const dl = f.querySelector('[data-act="dl"]');
+    if(dl) dl.onclick = async () => {
+      if(j.zipUrl) await sh("am start -a android.intent.action.VIEW -d " + shq(j.zipUrl) + " 2>&1", 20000);
+      toast("已交给浏览器");
+    };
+    if(j.changelog){
+      try{
+        const cr = await fetch(j.changelog + "?t=" + Date.now(), {cache:"no-store"});
+        const ct = await cr.text();
+        const el = $("updLog"); if(el) el.textContent = ct.slice(0, 4000);
+      }catch(e){ const el = $("updLog"); if(el) el.textContent = "(拉不到)"; }
+    }
+  }catch(e){
+    toast("检查失败：" + ((e && e.message) || e) + "（国内可能要梯子或换镜像）");
+  }finally{ busy(false); }
+}
+
+async function monSaveCfg(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  const fg = ($("monFg") || {}).value || "#e8ecf2";
+  const bg = ($("monBg") || {}).value || "#070a0f";
+  const sz = ($("monSize") || {}).value || "1";
+  const body = "fg=" + fg + "\nbg=" + bg + "\nsize=" + sz + "\n";
+  busy(true, "保存中");
+  try{
+    const r = await sh(
+      "mkdir -p /data/adb/ksu_toolbox; printf %s " + shq(body) + " > " + shq(MON_CONF) +
+      "; chmod 644 " + shq(MON_CONF) + "; wc -c < " + shq(MON_CONF), 20000);
+    const n = String(r.stdout || "").trim();
+    toast(/^\d+$/.test(n) ? "已保存，2 秒内生效" : ("保存可能失败：" + n.slice(0,60)));
+  }finally{ busy(false); }
+}
+async function monResetCfg(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  try{
+    await sh("rm -f " + shq(MON_CONF) + " 2>/dev/null; echo done", 15000);
+    if($("monFg")) $("monFg").value = "#e8ecf2";
+    if($("monBg")) $("monBg").value = "#070a0f";
+    if($("monSize")) $("monSize").value = "1";
+    if($("monSizeVal")) $("monSizeVal").textContent = "1.0×";
+    toast("外观已恢复默认（2 秒内生效）");
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+}
+async function monResetPos(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  try{
+    await sh("am start -n " + MON_PKG + "/.MonitorActivity --ez reset true 2>&1", 25000);
+    toast("已重置悬浮窗位置（会挪回状态栏下面）");
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+}
+async function monLoadCfg(){
+  try{
+    const r = await sh("cat " + shq(MON_CONF) + " 2>/dev/null", 15000);
+    const txt = String(r.stdout || "");
+    const g = k => { const m = new RegExp("^" + k + "=(.*)$", "m").exec(txt); return m ? m[1].trim() : null; };
+    const fg = g("fg"), bg = g("bg"), sz = g("size");
+    if(fg && $("monFg")) $("monFg").value = fg;
+    if(bg && $("monBg")) $("monBg").value = bg;
+    if(sz && $("monSize")) $("monSize").value = sz;
+    if($("monSizeVal")) $("monSizeVal").textContent = (sz || "1") + "×";
+  }catch(e){}
+}
+
 /* ============================================================
  *  12. 模态框 / Toast / 调度
  * ============================================================ */
@@ -4638,6 +4870,8 @@ function switchTab(tab){
   const dockTab = (tab === "diag" || tab === "about") ? "settings" : tab;
   document.querySelectorAll(".dock-item").forEach(b => b.classList.toggle("active", b.dataset.tab === dockTab));
   $("content").innerHTML = TABS[tab]();
+  if(tab === "perf"){ monInitPerf(); }
+  if(tab === "power" || tab === "term"){ setTimeout(() => { if($("chgStatus")) chgStatus(); }, 400); }
   if(tab === "term"){ initTerm(); guardInit(); stopClock(); clearInterval(timer); return; }
   if(tab === "settings" || tab === "about"){
     stopClock(); clearInterval(timer);
@@ -4776,6 +5010,25 @@ function init(){
     if(id === "monOpen") monOpen();
     else if(id === "monClose") monClose();
     else if(id === "monCheck") monCheck();
+    else if(id === "monSave") monSaveCfg();
+    else if(id === "monResetCfg") monResetCfg();
+    else if(id === "updCheck") checkUpdate();
+    else if(id === "chgProbe") chgProbe();
+    else if(id === "chgLimitSet") chgAct("设置充电上限", "limit " + (($("chgLimit")||{}).value || 80), "上限已设");
+    else if(id === "chgLimitOff") chgAct("关闭充电上限", "limit 0", "上限已关");
+    else if(id === "chgSuspend") chgAct("停充", "suspend 1", "已发送停充");
+    else if(id === "chgResume") chgAct("恢复充电", "suspend 0", "已恢复充电");
+    else if(id === "chgSlowToggle"){
+      const s = ($("chgStatus") || {}).dataset || {};
+      chgAct("切换慢充", "slow " + (s.slow === "1" ? "0" : "1"), "慢充已切换");
+    }
+    else if(id === "chgPowerSet"){
+      const v = (($("chgPower")||{}).value || "").trim();
+      if(!/^\d+$/.test(v)){ toast("填个数字（mW），比如 30000"); return; }
+      chgAct("设置功率上限", "power " + v, "功率上限已设");
+    }
+    else if(id === "chgShow") chgShow();
+    else if(id === "monResetPos") monResetPos();
   });
   $("content").addEventListener("click", e => {
     const seg = e.target.closest("#amSeg button");
@@ -4790,6 +5043,14 @@ function init(){
     if(a){ handleAppAct(a.getAttribute("data-appact"), a.getAttribute("data-k1")); }
   });
   $("content").addEventListener("input", e => {
+    if(e.target.id === "chgLimit"){
+      const v = $("chgLimitVal"); if(v) v.textContent = e.target.value + "%";
+      return;
+    }
+    if(e.target.id === "monSize"){
+      const v = $("monSizeVal"); if(v) v.textContent = e.target.value + "×";
+      return;
+    }
     if(e.target.id !== "amSearch") return;
     const A = appState();
     if(A.mode === "apps"){ A.appQ = e.target.value; const b = $("amBody"); if(b) b.innerHTML = appRowsHTML(); }
