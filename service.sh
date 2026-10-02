@@ -28,6 +28,11 @@ sh "$E" early >/dev/null 2>&1
     sleep 5
     sh "$E" late >/dev/null 2>&1
 
+    # 自愈：App 装了但悬浮窗权限被清了，补回来
+    if pm path com.jeteezntmax.toolbox >/dev/null 2>&1; then
+        appops set com.jeteezntmax.toolbox SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1
+    fi
+
     # 本地 HTTP 服务（设置页里开的）
     W="$MODDIR/bin/webui-server.sh"
     if [ -f "$W" ]; then
