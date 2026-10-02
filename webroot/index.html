@@ -1477,13 +1477,6 @@ function powerHTML(){
         <input class="modern-input" id="chgPower" placeholder="例如 30000" inputmode="numeric" autocomplete="off">
         <button class="action-btn primary" id="chgPowerSet">设置</button>
       </div>
-      <p class="field-hint" id="chgNote">按厂商探测节点；找不到就显示「不支持」，绝不瞎写。</p>
-      <label>充电节点各家都不一样，先扫描一下你这台有什么</label>
-      <div class="tagrow">
-        <button class="chip-btn" id="chgProbe">扫描充电节点</button>
-        <button class="chip-btn" id="chgShow">看上次结果</button>
-      </div>
-      <p class="field-hint" id="chgHint">扫完把结果发我，我按你的机型把控制项做出来。</p>
     </section>
 
     <section class="card hero" id="powerHero">
@@ -4492,7 +4485,7 @@ function pollGuard(){
             '<div class="row"><span>可能的表现</span><strong>立刻退出 / 装死 / 换另一条路动手</strong></div>' +
             '<div class="row"><span>建议</span><strong class="danger">不要执行，先在隔离环境里看</strong></div>' +
           '</section>' +
-          '<p class="field-hint">**不要以为「它退出了 = 它没干坏事」** —— 它可能只是先撤，等你放开再动手。</p>',
+          '<p class="field-hint">不要以为「它退出了 = 它没干坏事」—— 它可能只是先撤，等你放开再动手。</p>',
           '<button data-act="ok">知道了</button>');
         $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
       } else if(!hits && G.tick <= 2){
@@ -4690,32 +4683,6 @@ async function chgAct(label, args, done){
   await chgStatus();
 }
 
-function chgBin(){
-  return '/data/adb/modules/ksu_toolbox/bin/chg-probe.sh';
-}
-async function chgProbe(){
-  if(thermalState().demo){ toast("演示模式：未执行"); return; }
-  busy(true, "扫描中…");
-  try{
-    const r = await sh(
-      'B=""; for c in ' + chgBin() + ' /data/adb/modules_update/ksu_toolbox/bin/chg-probe.sh; do [ -f "$c" ] && B="$c" && break; done; ' +
-      'if [ -z "$B" ]; then echo "找不到 chg-probe.sh"; else sh "$B" 2>&1; fi | tee ' + shq(CHG_LOG), 60000);
-    const out = String(r.stdout || "");
-    openModal("充电节点扫描结果", "每一行 = 一个候选节点 的当前值 和 可写性",
-      '<div class="logbox" style="max-height:64vh;white-space:pre-wrap">' + esc(out || "(空)") + "</div>",
-      '<button data-act="ok">关闭</button>');
-    $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
-    const h = $("chgHint"); if(h) h.textContent = "扫完了。把弹窗里的内容发我（或者点「看上次结果」再截一次）。";
-  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
-  finally{ busy(false); }
-}
-async function chgShow(){
-  const r = await sh("cat " + shq(CHG_LOG) + " 2>/dev/null || echo '(还没扫过)'", 15000);
-  openModal("充电节点 · 上次结果", CHG_LOG,
-    '<div class="logbox" style="max-height:64vh;white-space:pre-wrap">' + esc(r.stdout || "(空)") + "</div>",
-    '<button data-act="ok">关闭</button>');
-  $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
-}
 
 async function checkUpdate(){
   busy(true, "检查更新中…");
@@ -5013,7 +4980,6 @@ function init(){
     else if(id === "monSave") monSaveCfg();
     else if(id === "monResetCfg") monResetCfg();
     else if(id === "updCheck") checkUpdate();
-    else if(id === "chgProbe") chgProbe();
     else if(id === "chgLimitSet") chgAct("设置充电上限", "limit " + (($("chgLimit")||{}).value || 80), "上限已设");
     else if(id === "chgLimitOff") chgAct("关闭充电上限", "limit 0", "上限已关");
     else if(id === "chgSuspend") chgAct("停充", "suspend 1", "已发送停充");
@@ -5027,7 +4993,6 @@ function init(){
       if(!/^\d+$/.test(v)){ toast("填个数字（mW），比如 30000"); return; }
       chgAct("设置功率上限", "power " + v, "功率上限已设");
     }
-    else if(id === "chgShow") chgShow();
     else if(id === "monResetPos") monResetPos();
   });
   $("content").addEventListener("click", e => {
