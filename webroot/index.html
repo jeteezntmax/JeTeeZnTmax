@@ -4628,7 +4628,7 @@ async function monClose(){
 const MON_CONF = "/data/adb/ksu_toolbox/monitor.conf";
 
 /* ---- 检测更新：直接 fetch，不走 shell（Android 上没有 curl/wget） ---- */
-const UPDATE_JSON = "https://cdn.jsdelivr.net/gh/jeteezntmax/JeTeeZnTmax@main/update.json";
+const UPDATE_JSON = "https://cdn.jsdelivr.net/gh/jeteezntmax/Kernelsu-Toolbox-JeTeeZnTmax@main/update.json";
 const CHG_LOG = "/data/local/tmp/chg-probe.txt";
 const CHG_SH = "/data/adb/modules/ksu_toolbox/bin/chg.sh";
 
@@ -4684,43 +4684,62 @@ async function chgAct(label, args, done){
 }
 
 
+async function fetchTO(url, ms){
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try{ ac.abort(); }catch(e){} }, ms || 15000);
+  try{ return await fetch(url, {cache: "no-store", signal: ac.signal}); }
+  finally{ clearTimeout(timer); }
+}
 async function checkUpdate(){
   busy(true, "检查更新中…");
+  let j = null;
+  const mi = state.moduleInfo || {};
   try{
-    const res = await fetch(UPDATE_JSON + "?t=" + Date.now(), {cache: "no-store"});
+    const res = await fetchTO(UPDATE_JSON + "?t=" + Date.now(), 15000);
     if(!res.ok) throw new Error("HTTP " + res.status);
-    const j = await res.json();
-    const mi = state.moduleInfo || {};
-    const curVC = parseInt(mi.versionCode || "0", 10) || 0;
-    const newVC = parseInt(j.versionCode || "0", 10) || 0;
-    const newer = newVC > curVC;
-    openModal(newer ? "🎉 有新版本" : "已是最新", "当前 " + (mi.version || "?") + " · versionCode " + curVC,
-      '<section class="card row-list">' +
-        '<div class="row"><span>最新版本</span><strong class="' + (newer ? "ok" : "") + '">' + esc(j.version || "?") + '</strong></div>' +
-        '<div class="row"><span>versionCode</span><strong>' + esc(String(newVC)) + '</strong></div>' +
-        (j.date ? '<div class="row"><span>发布</span><strong>' + esc(j.date) + '</strong></div>' : "") +
-      '</section>' +
-      (j.changelog ? '<div class="section-head"><h2>更新内容</h2></div><div class="logbox" style="max-height:26vh" id="updLog">读取中…</div>' : "") +
-      (newer ? banner("warn", "下载地址", esc(j.zipUrl || "（没配）") + "　→ 复制到浏览器/下载器打开") : ""),
-      newer ? '<button data-act="dl">用浏览器打开下载</button><button data-act="ok">关闭</button>'
-            : '<button data-act="ok">关闭</button>');
-    const f = $("modalFooter");
-    f.querySelector('[data-act="ok"]').onclick = closeModal;
-    const dl = f.querySelector('[data-act="dl"]');
-    if(dl) dl.onclick = async () => {
-      if(j.zipUrl) await sh("am start -a android.intent.action.VIEW -d " + shq(j.zipUrl) + " 2>&1", 20000);
-      toast("已交给浏览器");
-    };
-    if(j.changelog){
-      try{
-        const cr = await fetch(j.changelog + "?t=" + Date.now(), {cache:"no-store"});
-        const ct = await cr.text();
-        const el = $("updLog"); if(el) el.textContent = ct.slice(0, 4000);
-      }catch(e){ const el = $("updLog"); if(el) el.textContent = "(拉不到)"; }
-    }
+    j = await res.json();
   }catch(e){
+    busy(false);
     toast("检查失败：" + ((e && e.message) || e) + "（国内可能要梯子或换镜像）");
-  }finally{ busy(false); }
+    return;
+  }
+  // 关键：拿到 json 就【立刻】解除遮罩。
+  // 之前把 busy(false) 放在 finally 里，要等 changelog 那个 fetch 也结束 ——
+  // 它一卡住，遮罩就永远卡在屏幕上。
+  busy(false);
+
+  const curVC = parseInt(mi.versionCode || "0", 10) || 0;
+  const newVC = parseInt(j.versionCode || "0", 10) || 0;
+  const newer = newVC > curVC;
+  openModal(newer ? "🎉 有新版本" : "已是最新", "当前 " + (mi.version || "?") + " · versionCode " + curVC,
+    '<section class="card row-list">' +
+      '<div class="row"><span>最新版本</span><strong class="' + (newer ? "ok" : "") + '">' + esc(j.version || "?") + '</strong></div>' +
+      '<div class="row"><span>versionCode</span><strong>' + esc(String(newVC)) + '</strong></div>' +
+      (j.date ? '<div class="row"><span>发布</span><strong>' + esc(j.date) + '</strong></div>' : "") +
+    '</section>' +
+    (j.changelog ? '<div class="section-head"><h2>更新内容</h2></div><div class="logbox" style="max-height:26vh" id="updLog">读取中…</div>' : "") +
+    (newer ? banner("warn", "下载地址", esc(j.zipUrl || "（没配）") + "　→ 复制到浏览器/下载器打开") : ""),
+    newer ? '<button data-act="dl">用浏览器打开下载</button><button data-act="ok">关闭</button>'
+          : '<button data-act="ok">关闭</button>');
+  const f = $("modalFooter");
+  f.querySelector('[data-act="ok"]').onclick = closeModal;
+  const dl = f.querySelector('[data-act="dl"]');
+  if(dl) dl.onclick = async () => {
+    if(j.zipUrl) await sh("am start -a android.intent.action.VIEW -d " + shq(j.zipUrl) + " 2>&1", 20000);
+    toast("已交给浏览器");
+  };
+  // changelog 后台加载，不 await —— 拉不到也不影响主流程
+  if(j.changelog) loadChangelog(j.changelog);
+}
+async function loadChangelog(url){
+  const set = txt => { const el = $("updLog"); if(el) el.textContent = txt; };
+  try{
+    const cr = await fetchTO(url + "?t=" + Date.now(), 12000);
+    const ct = await cr.text();
+    set(ct.slice(0, 4000));
+  }catch(e){
+    set("(更新日志拉不到，不影响安装)");
+  }
 }
 
 async function monSaveCfg(){
