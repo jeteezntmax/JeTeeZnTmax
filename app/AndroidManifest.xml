@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.jeteezntmax.toolbox"
-    android:versionCode="1"
-    android:versionName="1.0">
+    android:versionCode="2"
+    android:versionName="1.1">
 
     <uses-sdk android:minSdkVersion="21" android:targetSdkVersion="30" />
+
+    <!-- 迷你监视器悬浮窗 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
     <application
         android:label="JeTeeZnTmax"
@@ -27,5 +31,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 悬浮窗入口：shell 里 am start -n .../.MonitorActivity 就能起 -->
+        <activity
+            android:name=".MonitorActivity"
+            android:exported="true"
+            android:label="迷你监视器"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- exported 是为了能从 shell / WebUI 发停止指令；
+             别的 app 最多也只是把这个悬浮窗关掉，无害 -->
+        <service
+            android:name=".MonitorService"
+            android:exported="true" />
+
     </application>
 </manifest>
