@@ -4693,9 +4693,23 @@ async function fetchTO(url, ms){
 async function checkUpdate(){
   busy(true, "检查更新中…");
   let j = null;
-  const mi = state.moduleInfo || {};
+  let mi = state.mi || {};
+  if(!mi.version && !mi.versionCode){
+    try{
+      const b = bridge();
+      if(b && typeof b.moduleInfo === "function"){
+        mi = JSON.parse(b.moduleInfo()) || {};
+        state.mi = mi;
+      }
+    }catch(e){}
+  }
+  if(!mi.version && !mi.versionCode){
+    busy(false);
+    toast("读不到模块信息 —— 请在 KernelSU 里打开这个界面");
+    return;
+  }
   try{
-    const res = await fetchTO(UPDATE_JSON + "?t=" + Date.now(), 15000);
+    const res = await fetchTO(UPDATE_JSON + "?t=" + Date.now(), 20000);
     if(!res.ok) throw new Error("HTTP " + res.status);
     j = await res.json();
   }catch(e){
@@ -4734,7 +4748,7 @@ async function checkUpdate(){
 async function loadChangelog(url){
   const set = txt => { const el = $("updLog"); if(el) el.textContent = txt; };
   try{
-    const cr = await fetchTO(url + "?t=" + Date.now(), 12000);
+    const cr = await fetchTO(url + "?t=" + Date.now(), 25000);
     const ct = await cr.text();
     set(ct.slice(0, 4000));
   }catch(e){
@@ -4976,6 +4990,7 @@ function init(){
     const b = bridge();
     if(b && typeof b.moduleInfo === "function"){
       const mi = JSON.parse(b.moduleInfo());
+      state.mi = mi;
       if(mi && mi.name) $("modName").textContent = mi.name;
       // module.prop 里的 version 常常自带 v（v2.0.0），别再补一个变成 vv2.0.0
       const _ver = mi && mi.version ? String(mi.version) : "";
