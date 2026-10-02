@@ -118,9 +118,11 @@ if [ -f "$APP" ]; then
     ui_print "- 安装桌面 App"
     pm install -r "$APP" >/dev/null 2>&1 || pm install -r -d "$APP" >/dev/null 2>&1
     sleep 2
-    for op in SYSTEM_ALERT_WINDOW POST_NOTIFICATION RUN_IN_BACKGROUND RUN_ANY_IN_BACKGROUND; do
+    for op in SYSTEM_ALERT_WINDOW POST_NOTIFICATION RUN_IN_BACKGROUND \
+              RUN_ANY_IN_BACKGROUND START_FOREGROUND; do
         appops set $PKG $op allow >/dev/null 2>&1
     done
+    dumpsys deviceidle whitelist +$PKG >/dev/null 2>&1
     if pm path $PKG >/dev/null 2>&1; then
         ui_print "- 桌面 App 已装好，悬浮窗权限已自动给"
     else
