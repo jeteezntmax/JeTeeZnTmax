@@ -146,9 +146,9 @@ public class MonitorService extends Service {
                         | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP | Gravity.START;
-        lp.x = dp(6);
-        lp.y = dp(2);            // 贴着屏幕最上方，状态栏那一层
+        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;   // 屏幕正上方居中
+        lp.x = 0;
+        lp.y = dp(1);            // 贴着屏幕最上方，状态栏那一层
 
         try { wm.addView(view, lp); }
         catch (Exception e) { stopSelf(); }
