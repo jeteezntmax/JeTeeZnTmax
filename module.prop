@@ -1,7 +1,7 @@
 id=ksu_toolbox
 name=JeTeeZnTmax
-version=v3.0.0
-versionCode=30000
+version=v3.0.1
+versionCode=30001
 author=@JeTeeZnTmax
 description=JeTeeZnTmax：受保护的执行(ptrace拦截) + 应用/进程管理 + Device Faker 机型伪装 + Extreme GT 去温控 + 温控/性能/电源/终端 · 含独立桌面 App + 迷你监视器悬浮窗
 updateJson=https://cdn.jsdelivr.net/gh/jeteezntmax/JeTeeZnTmax@main/update.json
