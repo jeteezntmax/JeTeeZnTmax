@@ -311,25 +311,74 @@ public class MonitorService extends Service {
         panelShown = false;
     }
 
-    /** 走模块里的 bin/refresh.sh：lock <hz> = 应用 + 存原值 + 起保活；"" = restore */
+    /** 找模块里的 bin/refresh.sh（装完没重启时在 modules_update 下） */
+    private String findRefreshSh() {
+        String[] cand = {
+                "/data/adb/modules/ksu_toolbox/bin/refresh.sh",
+                "/data/adb/modules_update/ksu_toolbox/bin/refresh.sh",
+                "/data/adb/modules/ksu_toolbox-update/bin/refresh.sh"};
+        for (String c : cand) {
+            try { if (new java.io.File(c).exists()) return c; } catch (Exception ignored) { }
+        }
+        return null;
+    }
+
+    private void toastMsg(String s) {
+        try {
+            android.widget.Toast.makeText(this, s, android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Exception ignored) { }
+    }
+
+    /** 把这一次的动作记到保活日志里（WebUI 的「保活日志」能看到） */
+    private void logPanel(String what, String res) {
+        try {
+            String line = "[$(date '+%m-%d %H:%M:%S')] 悬浮窗面板：" + what + " → " + (res == null || res.isEmpty() ? "OK" : res);
+            line = line.replace("'", "").replace("\"", "");
+            new ProcessBuilder("su", "-c",
+                    "mkdir -p /data/adb/ksu_toolbox/refresh; echo \"" + line + "\" >> /data/adb/ksu_toolbox/refresh/keep.log")
+                    .redirectErrorStream(true).start().waitFor();
+        } catch (Exception ignored) { }
+    }
+
+    /**
+     * 点面板上的档位：走模块的 bin/refresh.sh（lock = 应用 + 存原值 + 起保活；空 = restore）。
+     * 找不到脚本就直接写 settings 兜底（老版本模块也能用）。
+     * 全程给反馈 + 写日志 —— 不然失败了什么都看不到。
+     */
     private void applyRefresh(final String hz) {
+        final String what = hz.isEmpty() ? "恢复原值" : ("锁定 " + hz + "Hz");
+        toastMsg("正在" + what + "…");
         new Thread(new Runnable() {
             public void run() {
+                String out = "", err = "";
                 try {
-                    String path = null;
-                    String[] cand = {
-                            "/data/adb/modules/ksu_toolbox/bin/refresh.sh",
-                            "/data/adb/modules_update/ksu_toolbox/bin/refresh.sh",
-                            "/data/adb/modules/ksu_toolbox-update/bin/refresh.sh"};
-                    for (String c : cand) {
-                        java.io.File f = new java.io.File(c);
-                        if (f.exists()) { path = c; break; }
+                    String path = findRefreshSh();
+                    String cmd = null;
+                    if (path != null) {
+                        cmd = "sh " + path + " " + (hz.isEmpty() ? "restore" : ("lock " + hz));
+                    } else if (!hz.isEmpty()) {
+                        cmd = "settings put system peak_refresh_rate " + hz +
+                              "; settings put system min_refresh_rate " + hz +
+                              "; echo 兜底:没找到refresh.sh,直接写了settings";
+                    } else {
+                        cmd = "settings delete system peak_refresh_rate; settings delete system min_refresh_rate; echo 兜底:没找到refresh.sh,直接删了settings";
                     }
-                    if (path == null) return;
-                    String cmd = "sh " + path + " " + (hz.isEmpty() ? "restore" : ("lock " + hz));
-                    Process pr = new ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start();
-                    pr.waitFor();
-                } catch (Exception ignored) { }
+                    Process p = new ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start();
+                    java.io.BufferedReader r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String l;
+                    while ((l = r.readLine()) != null) sb.append(l).append(" ");
+                    p.waitFor();
+                    out = sb.toString().trim();
+                } catch (Exception e) {
+                    err = "执行失败：" + e;
+                }
+                final String res = err.isEmpty() ? out : err;
+                logPanel(what, res.isEmpty() ? "OK" : res);
+                final String tip = err.isEmpty()
+                        ? (what + "（" + (res.isEmpty() ? "完成" : res) + "）")
+                        : (what + " " + err);
+                ui.post(new Runnable() { public void run() { toastMsg(tip.length() > 90 ? tip.substring(0, 90) : tip); } });
             }
         }).start();
     }
