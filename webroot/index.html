@@ -4941,7 +4941,7 @@ async function monClose(){
 const MON_CONF = "/data/adb/ksu_toolbox/monitor.conf";
 
 /* ---- 检测更新：直接 fetch，不走 shell（Android 上没有 curl/wget） ---- */
-const UPDATE_JSON = "https://cdn.jsdelivr.net/gh/jeteezntmax/Kernelsu-Toolbox-JeTeeZnTmax@main/update.json";
+const UPDATE_JSON = "https://cdn.jsdelivr.net/gh/jeteezntmax/Kernelsu-Toolbox-JeTeeZnTmax@latest/update.json";
 const CHG_LOG = "/data/local/tmp/chg-probe.txt";
 const CHG_SH = "/data/adb/modules/ksu_toolbox/bin/chg.sh";
 
@@ -5038,11 +5038,15 @@ async function checkUpdate(){
   const curVC = parseInt(mi.versionCode || "0", 10) || 0;
   const newVC = parseInt(j.versionCode || "0", 10) || 0;
   const newer = newVC > curVC;
-  openModal(newer ? "🎉 有新版本" : "已是最新", "当前 " + (mi.version || "?") + " · versionCode " + curVC,
+  // 你装的是"比线上还新"的开发版（自己打过包的情况）—— 说清楚，别让人以为是没更新
+  const ahead = !newer && curVC > newVC;
+  openModal(newer ? "🎉 有新版本" : (ahead ? "当前是较新的开发版" : "已是最新"),
+    "当前 " + (mi.version || "?") + " · versionCode " + curVC + (ahead ? "（比线上还新）" : ""),
     '<section class="card row-list">' +
       '<div class="row"><span>最新版本</span><strong class="' + (newer ? "ok" : "") + '">' + esc(j.version || "?") + '</strong></div>' +
       '<div class="row"><span>versionCode</span><strong>' + esc(String(newVC)) + '</strong></div>' +
       (j.date ? '<div class="row"><span>发布</span><strong>' + esc(j.date) + '</strong></div>' : "") +
+      (ahead ? '<p class="field-hint">你这台装的 versionCode 比线上发布的还高 —— 一般是自己在本地打包装过的开发版。想回到发布版就装一次 Release 里的 zip。</p>' : "") +
     '</section>' +
     (j.changelog ? '<div class="section-head"><h2>更新内容</h2></div><div class="logbox" style="max-height:26vh" id="updLog">读取中…</div>' : "") +
     (newer ? banner("warn", "下载地址", esc(j.zipUrl || "（没配）") + "　→ 复制到浏览器/下载器打开") : ""),
