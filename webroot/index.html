@@ -1321,6 +1321,22 @@ function perfHTML(){
     <section class="card core-list" id="coreList"></section>
     <div class="section-head"><h2>运行状态</h2></div>
     <section class="card row-list" id="perfRows"></section>
+    <div class="section-head"><h2>刷新率锁定</h2><span class="hint" id="rrHint">扫描档位</span></div>
+    <section class="card file-card">
+      <div class="tagrow">
+        <button class="chip-btn" id="rrScan">扫描档位</button>
+        <button class="chip-btn" id="rrRestore">恢复原值</button>
+        <button class="chip-btn" id="rrLog">保活日志</button>
+      </div>
+      <label style="margin-top:10px">可用档位（点一下 = 持续锁定这一档）</label>
+      <div class="tagrow" id="rrRates">${rrRatesHTML()}</div>
+      <p class="field-hint" id="rrStat">点「扫描档位」看看这台机器有哪些刷新率。</p>
+      <p class="field-hint">扫过一次之后，<b>点悬浮窗上的「FPS」也会弹出同一套档位</b>（面板就在悬浮窗下面，点一下直接换档，点别处自动关）。</p>
+      <p class="field-hint">锁定 = 写 system 的 peak/min_refresh_rate（另外尽量切 display 的 user-preferred-mode），
+      然后<b>每 8 秒复查一次，被别的组件改回去就重写</b>（这就是保活，会记次数）。
+      「恢复原值」会把锁定前那组值还回去。</p>
+    </section>
+
     <div class="section-head"><h2>迷你监视器</h2><span class="hint">悬浮窗</span></div>
     <section class="card file-card">
       <label>把实时数据浮在所有应用上面</label>
@@ -4731,6 +4747,147 @@ function guardInit(){
 }
 
 /* ============================================================
+ *  11.7b 刷新率锁定
+ *  后端 bin/refresh.sh：扫描档位 / 锁定+保活 / 恢复原值
+ * ============================================================ */
+const RR_DIR = "/data/adb/ksu_toolbox/refresh";
+function rrBin(){
+  return 'B=""; for c in /data/adb/modules_update/ksu_toolbox/bin/refresh.sh /data/adb/modules/ksu_toolbox/bin/refresh.sh /data/adb/modules/ksu_toolbox-update/bin/refresh.sh; do [ -f "$c" ] && { B="$c"; break; }; done; [ -z "$B" ] && { echo "@@NOBIN"; exit 9; }; ';
+}
+function rrState(){
+  if(!state.rr) state.rr = {rates:[], modes:{}, curPeak:"", curMin:"", curMode:"", hz:"", enabled:"", keep:"", reverts:"", ready:false};
+  return state.rr;
+}
+async function rrRun(args, ms){
+  if(thermalState().demo){ toast("演示模式：未执行"); return "@@DEMO"; }
+  try{
+    const r = await sh(rrBin() + 'sh "$B" ' + args + " 2>&1", ms || 25000);
+    return String(r.stdout || "");
+  }catch(e){ return "ERR " + ((e && e.message) || e); }
+}
+function rrRatesHTML(){
+  const p = rrState();
+  if(!p.rates.length) return '<span class="field-hint" style="margin:0">还没有档位 —— 点左边「扫描档位」</span>';
+  return p.rates.map(function(hz){
+    const on = String(p.hz) === String(hz);
+    return '<button class="chip-btn" data-rr="' + esc(hz) + '"' + (on ? ' style="background:var(--blue-soft);color:var(--blue)"' : '') + '>' + esc(hz) + 'Hz' + (on ? ' ✓' : '') + '</button>';
+  }).join("");
+}
+function rrPaint(){
+  const p = rrState();
+  const host = $("rrRates");
+  if(host){
+    host.innerHTML = rrRatesHTML();
+    host.querySelectorAll("[data-rr]").forEach(function(b){
+      b.onclick = function(){ rrLock(b.dataset.rr); };
+    });
+  }
+  const sc = $("rrScan"); if(sc) sc.onclick = rrScan;
+  const rs = $("rrRestore"); if(rs) rs.onclick = rrRestore;
+  const lg = $("rrLog"); if(lg) lg.onclick = rrLog;
+  const hint = $("rrHint");
+  if(hint) hint.textContent = p.enabled === "1" ? ("已锁定 " + p.hz + "Hz" + (p.keep === "1" ? " · 保活中" : " · 保活没跑")) : "未锁定";
+}
+function rrShowStat(){
+  const p = rrState(), el = $("rrStat");
+  if(!el) return;
+  const bits = [];
+  if(p.rates.length) bits.push("档位：" + p.rates.join(" / ") + " Hz");
+  if(p.curPeak || p.curMin) bits.push("当前 peak=" + (p.curPeak || "?") + " min=" + (p.curMin || "?"));
+  if(p.enabled === "1"){
+    bits.push("锁定中：" + p.hz + "Hz" + (p.mode ? "（modeId " + p.mode + "）" : ""));
+    bits.push(p.keep === "1" ? "保活：在跑" : "保活：没跑");
+    if(p.reverts && p.reverts !== "0") bits.push("⚠ 被改回去 " + p.reverts + " 次（有别的组件在动它）");
+  } else {
+    bits.push("未锁定");
+  }
+  el.textContent = bits.join(" · ");
+}
+function rrApplyScan(out){
+  const p = rrState();
+  out.split("\n").forEach(function(L){
+    const i = L.indexOf("="); if(i < 0) return;
+    const k = L.slice(0, i), v = L.slice(i + 1).trim();
+    if(k === "rates"){ p.rates = v ? v.split(",").map(function(x){ return String(parseInt(x,10) || x); }) : []; }
+    else if(k === "modes"){
+      p.modes = {};
+      v.split(/\s+/).forEach(function(pair){ const q = pair.split("="); if(q.length === 2) p.modes[q[0]] = q[1]; });
+    }
+    else if(k === "cur_peak") p.curPeak = v;
+    else if(k === "cur_min") p.curMin = v;
+    else if(k === "cur_mode") p.curMode = v;
+  });
+  p.ready = true;
+}
+async function rrScan(){
+  busy(true, "扫描刷新率档位…");
+  let out = "";
+  try{ out = await rrRun("scan", 30000); }catch(e){ out = "ERR " + ((e && e.message) || e); }
+  busy(false);
+  if(out.indexOf("@@NOBIN") >= 0){ toast("找不到 bin/refresh.sh —— 模块没装全？"); return; }
+  rrApplyScan(out);
+  rrPaint(); rrShowStat();
+  const p = rrState();
+  toast(p.rates.length ? ("扫到 " + p.rates.length + " 个档位：" + p.rates.join("/") + "Hz") : "没扫到档位（这台机器的 dumpsys display 可能没给模式表）");
+}
+async function rrLock(hz){
+  const p = rrState();
+  if(String(p.hz) === String(hz) && p.enabled === "1"){ toast("已经是这一档了"); return; }
+  busy(true, "锁定 " + hz + "Hz…");
+  let out = "";
+  try{ out = await rrRun("lock " + hz + (p.modes[hz] ? " " + p.modes[hz] : ""), 35000); }catch(e){ out = "ERR " + ((e && e.message) || e); }
+  busy(false);
+  toast(String(out).trim().slice(0, 80) || ("已锁定 " + hz + "Hz"));
+  await rrStatus();
+}
+async function rrRestore(){
+  busy(true, "还原中…");
+  let out = "";
+  try{ out = await rrRun("restore", 35000); }catch(e){ out = "ERR " + ((e && e.message) || e); }
+  busy(false);
+  toast(String(out).trim().slice(0, 80) || "已还原");
+  const p = rrState(); p.hz = ""; p.enabled = ""; p.keep = ""; p.reverts = "";
+  rrPaint(); rrShowStat();
+}
+async function rrStatus(){
+  let out = "";
+  try{ out = await rrRun("status", 20000); }catch(e){ out = ""; }
+  const p = rrState();
+  out.split("\n").forEach(function(L){
+    const i = L.indexOf("="); if(i < 0) return;
+    const k = L.slice(0, i).trim(), v = L.slice(i + 1).trim();
+    if(k === "hz") p.hz = v;
+    else if(k === "mode") p.mode = v;
+    else if(k === "enabled") p.enabled = v;
+    else if(k === "keep") p.keep = v;
+    else if(k === "reverts") p.reverts = v;
+    else if(k === "cur_peak") p.curPeak = v;
+    else if(k === "cur_min") p.curMin = v;
+  });
+  // 档位文件（后端扫描时会写一份，App 的面板也读它）
+  if(!p.rates.length){
+    try{
+      const r = await sh("cat " + shq(RR_DIR + "/rates") + " 2>/dev/null", 12000);
+      const t = String(r.stdout || "").trim();
+      if(t) p.rates = t.split(",").map(function(x){ return String(parseInt(x,10) || x); });
+    }catch(e){}
+  }
+  p.ready = true;
+  rrPaint(); rrShowStat();
+}
+async function rrLog(){
+  const out = await rrRun("log 60", 20000);
+  openModal("刷新率保活 · 日志", RR_DIR + "/keep.log",
+    '<div class="logbox" style="max-height:60vh;white-space:pre-wrap">' + esc(out || "(空)") + '</div>',
+    '<button data-act="ok">关闭</button>');
+  $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
+}
+function rrInit(){
+  rrPaint();
+  rrStatus();
+}
+
+/* ============================================================
  *  11.8 迷你监视器悬浮窗
  *
  *  悬浮窗本身是桌面 App 画的（TYPE_APPLICATION_OVERLAY），
@@ -5182,7 +5339,7 @@ function switchTab(tab){
   const dockTab = (tab === "diag" || tab === "about") ? "settings" : tab;
   document.querySelectorAll(".dock-item").forEach(b => b.classList.toggle("active", b.dataset.tab === dockTab));
   $("content").innerHTML = TABS[tab]();
-  if(tab === "perf"){ monInitPerf(); }
+  if(tab === "perf"){ monInitPerf(); rrInit(); }
   if(tab === "power" || tab === "term"){ setTimeout(() => { if($("chgStatus")) chgStatus(); }, 400); }
   if(tab === "term"){ initTerm(); guardInit(); stopClock(); clearInterval(timer); return; }
   if(tab === "settings" || tab === "about"){

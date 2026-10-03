@@ -41,6 +41,14 @@ sh "$E" early >/dev/null 2>&1
         am start -n $PKG/.MonitorActivity >/dev/null 2>&1
     fi
 
+    # 刷新率保活（如果之前锁过刷新率）
+    RF="$MODDIR/bin/refresh.sh"
+    if [ -f "$RF" ]; then
+        e=""
+        [ -f /data/adb/ksu_toolbox/refresh/refresh.conf ] && e=$(grep -m1 '^enabled=' /data/adb/ksu_toolbox/refresh/refresh.conf 2>/dev/null | cut -d= -f2)
+        [ "$e" = "1" ] && sh "$RF" keepalive start >/dev/null 2>&1
+    fi
+
     # 本地 HTTP 服务（设置页里开的）
     W="$MODDIR/bin/webui-server.sh"
     if [ -f "$W" ]; then

@@ -334,8 +334,17 @@ public class MonitorView extends View {
             cv.drawText(o.label, x, baseline, pLab);
             x += pLab.measureText(o.label) + dp(2);
             pVal.setColor(colorOf(o));
-            cv.drawText(o.value, x, baseline, pVal);
-            x += pVal.measureText(o.value);
+            float vx = x;
+            cv.drawText(o.value, vx, baseline, pVal);
+            float vw = pVal.measureText(o.value);
+            if (o.key == 2) {                        // FPS：点它能弹刷新率面板
+                fpsL = vx; fpsR = vx + vw;
+                if (st.rates != null && !st.rates.isEmpty()) {
+                    float uy = baseline + dp(1.2f);
+                    cv.drawLine(vx, uy, vx + vw, uy, pDiv);   // 细线 = "这里能点"
+                }
+            }
+            x = vx + vw;
             if (i < it.size() - 1) {
                 x += gap;
                 cv.drawLine(x + divW / 2, H * 0.26f, x + divW / 2, H * 0.74f, pDiv);
@@ -344,26 +353,40 @@ public class MonitorView extends View {
         }
     }
 
-    /* ---------- 拖动 ---------- */
+    /* ---------- 拖动 + 点按 ---------- */
     public interface DragHost { void onDrag(int dx, int dy); }
+    /** 点了某一项（现在只有 FPS 用：弹刷新率面板） */
+    public interface TapHost { void onTap(int key); }
     private DragHost host;
-    private float downX, downY;
+    private TapHost tapHost;
+    private float downX, downY, downRawX, downRawY;
+    private boolean moved;
+    private float fpsL = -1, fpsR = -1;      // FPS 那一项的 x 范围（视图内坐标）
 
     public void setDragHost(DragHost h) { host = h; }
+    public void setTapHost(TapHost h) { tapHost = h; }
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 downX = e.getRawX(); downY = e.getRawY();
+                downRawX = e.getRawX(); downRawY = e.getRawY();
+                moved = false;
                 return true;
             case MotionEvent.ACTION_MOVE:
+                if (Math.abs(e.getRawX() - downRawX) > dp(8) || Math.abs(e.getRawY() - downRawY) > dp(8)) moved = true;
                 if (host != null) {
                     host.onDrag((int) (e.getRawX() - downX), (int) (e.getRawY() - downY));
                     downX = e.getRawX(); downY = e.getRawY();
                 }
                 return true;
             case MotionEvent.ACTION_UP:
+                // 没怎么动 = 点按；点在 FPS 那一项上就通知外面弹面板
+                if (!moved && tapHost != null && fpsL >= 0 &&
+                    e.getX() >= fpsL - dp(5) && e.getX() <= fpsR + dp(5)) {
+                    tapHost.onTap(2);
+                }
                 return true;
         }
         return super.onTouchEvent(e);

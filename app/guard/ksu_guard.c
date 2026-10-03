@@ -880,13 +880,6 @@ int main(int argc, char **argv) {
             why = "内核模块操作";
         } else if (nr == NR_swapon || nr == NR_swapoff) {
             why = "swap 操作";
-        } else if (nr == NR_unlinkat) {
-            char path[PATH_MAX]; rdstr(cur, A[1], path, sizeof path);
-            if (path_hit(cur, (int)A[0], path, detail, sizeof detail)) {
-                why = "删 /dev/block 里的东西";
-            } else if (path_is_critical(path)) {
-                why = "删除关键路径"; snprintf(detail, sizeof detail, "%s", path);
-            }
         } else if (!opt_allow_mount && (nr == NR_mount || nr == NR_umount2)) {
             char path[PATH_MAX]; rdstr(cur, A[0], path, sizeof path);
             if (path_is_critical(path) || path_is_blockish(path)) {

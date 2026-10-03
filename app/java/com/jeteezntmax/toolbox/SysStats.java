@@ -26,6 +26,8 @@ public class SysStats {
     public double gpuPct = -1;       // GPU 占用率（能拿到就用它）
     public double gpuMhz = -1;       // GPU 频率（占用率拿不到就退而显示频率）
     public String cfg = "";          // 用户在 WebUI 里设的配色/字号/显示项
+    public String rates = "";        // 扫描到的刷新率档位（"144,120,90,60"）—— 悬浮窗面板用
+    public String lockHz = "";       // 当前锁定的刷新率（空 = 没锁）
 
     /* ---------- 一次性采集脚本（不含帧率、不含时间） ---------- */
     private static final String SCRIPT =
@@ -54,7 +56,10 @@ public class SysStats {
         "  if [ -z \"$U\" ] && [ -r \"$f\" ]; then IFS= read -r U < \"$f\"; fi; done; " +
         "U=${U%% *}; [ -n \"$U\" ] && U=$(( U / 1000000 )) 2>/dev/null; " +
         "echo GPUM $U; " +
-        "echo CFG $(cat /data/adb/ksu_toolbox/monitor.conf 2>/dev/null | tr \"\\n\" \";\")";
+        "echo CFG $(cat /data/adb/ksu_toolbox/monitor.conf 2>/dev/null | tr \"\\n\" \";\"); " +
+        /* 刷新率档位 + 当前锁定档（点悬浮窗的 FPS 会用到，读文件就行不用跑 dumpsys） */
+        "echo RATES $(cat /data/adb/ksu_toolbox/refresh/rates 2>/dev/null | tr -d \"\\r\\n\"); " +
+        "echo RRHZ $(sed -n 's/^hz=//p' /data/adb/ksu_toolbox/refresh/refresh.conf 2>/dev/null | head -n1)";
 
     /* ---------- CPU 利用率：两次差值 ---------- */
     private long prevTotal = -1, prevIdle = -1;
@@ -126,6 +131,8 @@ public class SysStats {
                     if (g >= 0 && g <= 100) gpuPct = g;
                 }
                 else if (line.startsWith("CFG ")) cfg = line.substring(4).trim();
+                else if (line.startsWith("RATES ")) rates = line.substring(6).trim();
+                else if (line.startsWith("RRHZ ")) lockHz = line.substring(5).trim();
                 if (System.currentTimeMillis() - t0 > 6000) break;
             }
             p.waitFor();

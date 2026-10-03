@@ -1,6 +1,51 @@
 # 更新日志
 
+## v3.3.0
+
+### 新增：刷新率锁定（性能页）
+
+- **扫描档位** —— 读 `dumpsys display` 的模式表，把本机可用刷新率列出来，
+  顺带记下每档对应的 `modeId`（有些 ROM 只认 `cmd display set-user-preferred-display-mode`，
+  光写 settings 没用）
+- **持续锁定** —— 写 system 的 `peak_refresh_rate` / `min_refresh_rate`，另外尽量切
+  display 的 user-preferred-mode
+- **保活** —— 每 8 秒复查一次，被别的组件改回去就重写，并计数
+  （界面会提示「⚠ 被改回去 N 次」）。开机也会自动恢复保活
+- **恢复原值** —— 锁定前那组值先存下来，点一下原样还回去
+
+### 新增：点悬浮窗的「FPS」弹出档位面板
+
+监视器开着、显示项里有 FPS 时，点悬浮窗上的「FPS」会在它正下方弹出一个小面板：
+每档一颗药丸 + 「恢复」，当前档高亮，点一下直接换档。
+
+- **点面板外面自动关**（窗口的 `FLAG_WATCH_OUTSIDE_TOUCH` 收 `ACTION_OUTSIDE`），
+  8 秒没人理也自动关；拖动悬浮窗会把它收掉
+- 档位表跟 WebUI 共用一份（`refresh.sh scan` 写 `refresh/rates`，App 直接读，
+  不用自己跑 dumpsys）；实际动作交给 `bin/refresh.sh`，保活逻辑只有一份
+
+### 改动：受保护的执行 —— 不再拦 `rm -rf`
+
+安卓上 `rm -rf` 只能动 /data 下的东西，碰不到真实分区、也影响不了引导，
+而正常脚本天天在用，拦它只会误伤。现在只拦真正能搞坏设备的：
+`/dev/block` 读写 + `mknod` 造块设备 · 写 `sysrq-trigger`/`panic`/selinux ·
+`reboot(2)`/`kexec`/内核模块/swap · 绕道路径（`io_uring`/`splice`/`sendfile`/
+`copy_file_range`）· `clone(CLONE_UNTRACED)` · `mount/umount2` 关键路径。
+
+顺带修了"删关键路径"那套判据会**误伤**的问题（原来 `rm -rf /persist` 之类会被打断）。
+
+### 修正：悬浮窗不再"自己冒出来"
+
+`MonitorService` 原来返回 `START_STICKY` —— 系统回收后会把服务再拉起来，
+`onCreate` 里就画悬浮窗，于是你没点它也会自己出现。改成 `START_NOT_STICKY`。
+（开机自动拉起照旧，`service.sh` 那行没动。）
+
+### 另外
+
+- 受保护的执行带了自测套件：`app/guard/test-guard.sh`，15 项，跑完出 PASS/FAIL 表
+  （全程在临时目录的假块设备树上做，不碰真实分区）
+
 ## v3.1.0
+
 
 ### 迷你监视器 —— 显示项、配色、位置全部可调
 

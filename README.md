@@ -108,6 +108,19 @@ RSS / 状态 / cpuset / cgroup / wchan，可按 CPU / 内存 / PID / UID 排序�
 数据由桌面 App 直接读 sysfs（App 有 root），不走 shell —— 所以整条状态条没有额外进程开销。
 每 2 秒刷新一次，帧率每秒更新，时间每秒跳。
 
+### 🎚 刷新率锁定（性能页）
+
+- **扫描档位** —— 读 `dumpsys display` 的模式表，列出本机可用刷新率，
+  并记下每档对应的 `modeId`（有些 ROM 只认 `cmd display set-user-preferred-display-mode`）
+- **持续锁定** —— 写 system 的 `peak_refresh_rate` / `min_refresh_rate`，
+  另外尽量切 display 的 user-preferred-mode
+- **保活** —— 每 8 秒复查一次，被别的组件改回去就重写并计数
+  （界面提示「⚠ 被改回去 N 次」）；开机自动恢复保活
+- **恢复原值** —— 锁定前的值会先存下来，点一下原样还原
+- **悬浮窗上直接换档** —— 监视器开着、显示项里有 FPS 时，
+  点悬浮窗上的「FPS」会在它正下方弹出档位面板（每档一颗药丸 + 「恢复」，
+  当前档高亮）；点面板外面 / 8 秒无操作 / 拖动悬浮窗都会自动收起
+
 ### 🌡 温度 / 电源 / 性能
 
 - 环形仪表盘、各核心频率、真实 CPU 占用趋势
@@ -188,6 +201,7 @@ Device Faker 的配置前端（TOML 编辑、模板管理、备份）。
 ├── bin/
 │   ├── ksu_guard           ptrace 拦截器（aarch64 静态 ELF，纯 musl）
 │   ├── chg.sh              充电控制后端（节点探测 + 写入）
+│   ├── refresh.sh          刷新率锁定 / 保活（scan/lock/restore/keepalive）
 │   ├── collect.sh          HTTP 快照采集
 │   └── webui-server.sh     本地服务（只监听 127.0.0.1）
 ├── app/                    独立桌面 App 源码

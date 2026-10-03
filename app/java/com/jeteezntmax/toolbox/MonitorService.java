@@ -32,7 +32,8 @@ import android.view.WindowManager;
 public class MonitorService extends Service {
 
     public static final String ACTION_STOP = "com.jeteezntmax.toolbox.STOP_MONITOR";
-    /** 挪动悬浮窗：--ei dx/--ei dy 相对移动，--ei ax/--ei ay 绝对定位（-1 = 不改） */
+    /** 弹一条打字机提示条：--es text / --ei ms / --es pos(tr|tc|br|bl) */
+/** 挪动悬浮窗：--ei dx/--ei dy 相对移动，--ei ax/--ei ay 绝对定位（-1 = 不改） */
     public static final String ACTION_NUDGE = "com.jeteezntmax.toolbox.NUDGE_MONITOR";
     public static final String ACTION_RESET = "com.jeteezntmax.toolbox.RESET_MONITOR";
     private static final int NOTI_ID = 0x4A54;
@@ -43,6 +44,13 @@ public class MonitorService extends Service {
     private WindowManager wm;
     private MonitorView view;
     private WindowManager.LayoutParams lp;
+    /* 点悬浮窗里的「FPS」弹出来的刷新率面板 */
+    private RefreshPanelView panel;
+    private WindowManager.LayoutParams panelLp;
+    private boolean panelShown;
+    private final Runnable panelTimeout = new Runnable() {
+        public void run() { hideRefreshPanel(); }
+    };
     private Handler ui;
     private Thread worker;
     private volatile boolean running;
@@ -97,14 +105,14 @@ public class MonitorService extends Service {
                 ay = -1;
             }
             nudge(dx, dy, ax, ay);
-            return START_STICKY;
+            return START_NOT_STICKY;   /* 别让系统自己把它拉回来 —— 会「莫名其妙打开悬浮窗」 */
         }
         if (intent != null && ACTION_RESET.equals(intent.getAction())) {
             getSharedPreferences(PREF, MODE_PRIVATE).edit().clear().apply();
             nudge(0, 0, dp(2), statusBarH() + dp(1));
-            return START_STICKY;
+            return START_NOT_STICKY;   /* 别让系统自己把它拉回来 —— 会「莫名其妙打开悬浮窗」 */
         }
-        return START_STICKY;
+        return START_NOT_STICKY;   /* 别让系统自己把它拉回来 —— 会「莫名其妙打开悬浮窗」 */
     }
 
     /** 挪悬浮窗（并记到 SharedPreferences） */
@@ -129,6 +137,7 @@ public class MonitorService extends Service {
         running = false;
         ui.removeCallbacksAndMessages(null);
         if (worker != null) { worker.interrupt(); worker = null; }
+        hideRefreshPanel();
         if (view != null && wm != null) {
             try { wm.removeView(view); } catch (Exception ignored) { }
         }
@@ -182,12 +191,19 @@ public class MonitorService extends Service {
                 if (lp.y < 0) lp.y = 0;
                 if (lp.x < 0) lp.x = 0;
                 try { wm.updateViewLayout(view, lp); } catch (Exception ignored) { }
+                if (panelShown) hideRefreshPanel();
                 long now = System.currentTimeMillis();
                 if (now - lastSave > 600) {          // 别每移动一像素就写一次盘
                     lastSave = now;
                     getSharedPreferences(PREF, MODE_PRIVATE).edit()
                             .putInt("mx", lp.x).putInt("my", lp.y).apply();
                 }
+            }
+        });
+        // 点「FPS」那一项 → 弹刷新率面板
+        view.setTapHost(new MonitorView.TapHost() {
+            public void onTap(int key) {
+                if (key == 2) toggleRefreshPanel();
             }
         });
         // 双击关闭 —— 原来是长按，但长按会和"按住拖动"抢手势，所以换了
@@ -228,6 +244,94 @@ public class MonitorService extends Service {
 
         try { wm.addView(view, lp); }
         catch (Exception e) { stopSelf(); }
+    }
+
+    /* ---------- 刷新率面板（点 FPS 弹出来的那个） ---------- */
+    private void toggleRefreshPanel() {
+        if (panelShown) { hideRefreshPanel(); return; }
+        if (view == null || wm == null || lp == null) return;
+        final MonitorView v = view;
+        RefreshPanelView p = new RefreshPanelView(this, v.stats().rates, v.stats().lockHz);
+        p.setOnPick(new RefreshPanelView.OnPick() {
+            public void pick(String hz) {
+                applyRefresh(hz);
+                hideRefreshPanel();
+            }
+        });
+        p.setOnOutside(new RefreshPanelView.OnOutside() {
+            public void outside() { hideRefreshPanel(); }
+        });
+        int type = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+        // FLAG_WATCH_OUTSIDE_TOUCH：点到面板外面会收到 ACTION_OUTSIDE → 自动关
+        panelLp = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT);
+        panelLp.gravity = Gravity.TOP | Gravity.START;
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int screenH = getResources().getDisplayMetrics().heightPixels;
+        try {
+            p.measure(View.MeasureSpec.makeMeasureSpec(screenW - dp(8), View.MeasureSpec.AT_MOST),
+                      View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        } catch (Exception ignored) { }
+        int pw = p.getMeasuredWidth(), ph = p.getMeasuredHeight();
+        if (pw <= 0) pw = screenW / 2;
+        if (ph <= 0) ph = dp(30);
+        int x = Math.max(dp(2), Math.min(lp.x, screenW - pw - dp(2)));
+        int y = lp.y + v.getHeight() + dp(4);
+        if (y + ph > screenH - dp(8)) y = Math.max(dp(2), lp.y - ph - dp(4));   // 下面放不下就放上面
+        panelLp.x = x;
+        panelLp.y = y;
+        try {
+            wm.addView(p, panelLp);
+            panel = p;
+            panelShown = true;
+        } catch (Exception e) {
+            panel = null;
+            panelShown = false;
+            return;
+        }
+        ui.removeCallbacks(panelTimeout);
+        ui.postDelayed(panelTimeout, 8000);        // 兜底：8 秒没人理也关
+    }
+
+    private void hideRefreshPanel() {
+        ui.removeCallbacks(panelTimeout);
+        if (panel != null && wm != null) {
+            try { wm.removeViewImmediate(panel); } catch (Exception ignored) { }
+        }
+        panel = null;
+        panelShown = false;
+    }
+
+    /** 走模块里的 bin/refresh.sh：lock <hz> = 应用 + 存原值 + 起保活；"" = restore */
+    private void applyRefresh(final String hz) {
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    String path = null;
+                    String[] cand = {
+                            "/data/adb/modules/ksu_toolbox/bin/refresh.sh",
+                            "/data/adb/modules_update/ksu_toolbox/bin/refresh.sh",
+                            "/data/adb/modules/ksu_toolbox-update/bin/refresh.sh"};
+                    for (String c : cand) {
+                        java.io.File f = new java.io.File(c);
+                        if (f.exists()) { path = c; break; }
+                    }
+                    if (path == null) return;
+                    String cmd = "sh " + path + " " + (hz.isEmpty() ? "restore" : ("lock " + hz));
+                    Process pr = new ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start();
+                    pr.waitFor();
+                } catch (Exception ignored) { }
+            }
+        }).start();
     }
 
     private int dp(int v) {
