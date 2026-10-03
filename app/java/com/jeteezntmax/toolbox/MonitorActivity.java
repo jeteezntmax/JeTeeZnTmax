@@ -29,10 +29,37 @@ public class MonitorActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
-        // 重置位置：把存下来的坐标清掉，服务起来就会回到默认位置
-        if (getIntent() != null && getIntent().getBooleanExtra("reset", false)) {
+        Intent in = getIntent();
+
+        // 挪位置：WebUI / 桌面 App 里按方向键，就是发 dx/dy 过来。
+        // 服务没在跑的话，这里顺便把它拉起来（用户本来就是在调悬浮窗）
+        if (in != null && (in.hasExtra("dx") || in.hasExtra("dy") || in.hasExtra("ax") || in.hasExtra("ay") || in.hasExtra("center"))) {
+            try {
+                Intent i = new Intent(this, MonitorService.class);
+                i.setAction(MonitorService.ACTION_NUDGE);
+                i.putExtra("dx", in.getIntExtra("dx", 0));
+                i.putExtra("dy", in.getIntExtra("dy", 0));
+                i.putExtra("ax", in.getIntExtra("ax", -1));
+                i.putExtra("ay", in.getIntExtra("ay", -1));
+                i.putExtra("center", in.getBooleanExtra("center", false));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                else startService(i);
+            } catch (Exception ignored) { }
+            finish();
+            return;
+        }
+        // 重置位置：回到状态栏下面（服务在跑的话也会立刻归位）
+        if (in != null && in.getBooleanExtra("reset", false)) {
             getSharedPreferences("monitor", MODE_PRIVATE).edit().clear().apply();
+            try {
+                Intent i = new Intent(this, MonitorService.class);
+                i.setAction(MonitorService.ACTION_RESET);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(i);
+                else startService(i);
+            } catch (Exception ignored) { }
             Toast.makeText(this, "悬浮窗位置已重置", Toast.LENGTH_SHORT).show();
+            finish();
+            return;
         }
         if (MonitorService.canOverlay(this)) { go(); return; }
 
@@ -123,7 +150,7 @@ public class MonitorActivity extends Activity {
         if (tip != null) tip.cancel();
         try {
             MonitorService.start(this);
-            Toast.makeText(this, "迷你监视器已开启（长按悬浮窗关闭）", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "迷你监视器已开启（双击悬浮窗关闭）", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
             Toast.makeText(this, "启动失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }

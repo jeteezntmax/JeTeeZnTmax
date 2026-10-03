@@ -291,6 +291,18 @@ input[type=color]::-webkit-color-swatch-wrapper{padding:0}
 input[type=color]::-webkit-color-swatch{border:none;border-radius:50%}
 .cpick{display:flex;align-items:center;gap:8px;flex:1}
 .cpick span{color:var(--text-2);font-size:11px}
+/* ── 迷你监视器：显示项 / 单项配色 / 位置方向盘 ── */
+.monitem{display:flex;align-items:center;gap:8px;padding:4px 0}
+.monitem .mi-lab{flex:1;color:var(--text-2);font-size:11px;font-family:var(--mono)}
+.monitem input[type=color]{width:30px;height:30px;flex:0 0 30px}
+.monitem .mi-auto{min-height:28px;padding:0 10px;border-radius:10px}
+.monrow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.monrow .chip-btn{min-height:32px;padding:0 10px;border-radius:11px}
+.monmv{flex:none;width:42px;min-height:32px;border-radius:11px;background:var(--track-soft);color:var(--text-2);font:600 16px/1 var(--mono)}
+.monmv:active{transform:scale(.94);color:var(--blue)}
+.guard-stat{margin:0;padding:7px 12px;border:1px solid var(--border-hi);border-radius:14px;background:var(--track-soft);color:var(--text-2);font:11px/1.5 var(--mono);white-space:pre-wrap;word-break:break-all}
+.guard-stat.on{color:var(--green);border-color:color-mix(in srgb,var(--green) 40%,transparent)}
+.guard-stat.warn{color:var(--orange);border-color:color-mix(in srgb,var(--orange) 40%,transparent)}
 .psearch{position:sticky;bottom:calc(92px + env(safe-area-inset-bottom,0));z-index:60;display:flex;gap:8px;align-items:center;padding:8px 10px 8px 14px;border:1px solid var(--border-hi);border-radius:18px;background:linear-gradient(145deg,rgba(255,255,255,.09),transparent 45%),var(--glass-strong);box-shadow:var(--shadow);backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%)}
 .psearch .term-input{height:36px}
 .psearch .term-run{height:36px}
@@ -1253,7 +1265,39 @@ function gaugeHTML(id, label){
     <div class="gs" id="${id}Sub">--</div>
   </div>`;
 }
+/* ---------- 迷你监视器：显示项定义 + 共用小函数 ---------- */
+const MON_ITEMS = [["cpu","CPU"],["gpu","GPU"],["fps","FPS"],["ram","内存"],["bat","电池"],["pow","功耗"],["temp","温度"],["time","时间"]];
+const MON_DEF_SHOW = ["cpu","fps","pow","temp"];      // 出厂默认还是原来那四项
+const MON_DEF_COLOR = "#5be38a";
+function monCfg(){
+  if(!state.mon) state.mon = {};
+  const c = state.mon;
+  if(!c.show) c.show = MON_DEF_SHOW.slice();
+  if(!c.colors) c.colors = {};
+  if(!c.tf) c.tf = "hm";
+  if(!c.fg) c.fg = "#e8ecf2";
+  if(c.fgOn === undefined) c.fgOn = false;
+  if(!c.step) c.step = 5;
+  return c;
+}
+function monShowHTML(){
+  const c = monCfg();
+  return MON_ITEMS.map(function(it){
+    const on = c.show.indexOf(it[0]) >= 0;
+    return '<button class="chip-btn" data-show="' + it[0] + '"' + (on ? ' style="background:var(--blue-soft);color:var(--blue)"' : '') + '>' + it[1] + '</button>';
+  }).join("");
+}
+function monColorHTML(){
+  const c = monCfg();
+  return MON_ITEMS.map(function(it){
+    const k = it[0], v = c.colors[k] || "";
+    return '<div class="monitem"><span class="mi-lab">' + it[1] + '</span>' +
+      '<input type="color" id="monC_' + k + '" value="' + (v || MON_DEF_COLOR) + '"' + (v ? '' : ' style="opacity:.35"') + '>' +
+      '<button class="chip-btn mi-auto" data-auto="' + k + '"' + (v ? ' style="background:var(--blue-soft);color:var(--blue)"' : '') + '>' + (v ? '自定义' : '自动') + '</button></div>';
+  }).join("");
+}
 function monInitPerf(){
+  monPaint();
   setTimeout(() => { if($("monFg")) monLoadCfg(); }, 100);
 }
 function perfHTML(){
@@ -1263,31 +1307,6 @@ function perfHTML(){
       ${gaugeHTML("gGpu", "GPU")}
       ${gaugeHTML("gMem", "内存")}
     </div>
-    <div class="section-head"><h2>迷你监视器</h2><span class="hint">悬浮窗</span></div>
-    <section class="card file-card">
-      <label>把实时数据浮在所有应用上面</label>
-      <div class="tagrow">
-        <button class="chip-btn" id="monOpen">打开悬浮窗</button>
-        <button class="chip-btn" id="monClose">关闭</button>
-        <button class="chip-btn" id="monCheck">检测状态</button>
-      </div>
-      <p class="field-hint" id="monHint">点「检测状态」看看桌面 App 装了没。</p>
-      <label style="margin-top:10px">外观</label>
-      <div class="file-row">
-        <div class="cpick"><input type="color" id="monFg" value="#e8ecf2"><span>文字</span></div>
-        <div class="cpick"><input type="color" id="monBg" value="#070a0f"><span>背景</span></div>
-      </div>
-      <div class="file-row" style="align-items:center">
-        <span style="color:var(--text-2);font-size:11px">字号</span>
-        <input type="range" id="monSize" min="0.6" max="2" step="0.1" value="1" style="flex:1">
-        <span id="monSizeVal" style="color:var(--blue);font:600 11px var(--mono);width:38px;text-align:right">1.0×</span>
-      </div>
-      <div class="tagrow">
-        <button class="chip-btn" id="monSave">保存外观</button>
-        <button class="chip-btn" id="monResetCfg">重置外观</button>
-        <button class="chip-btn" id="monResetPos">重置悬浮窗位置</button>
-      </div>
-    </section>
     <section class="card spark-card">
       <div class="spark-head"><strong>CPU 占用趋势</strong><span id="sparkCpuInfo">采样中…</span></div>
       <svg class="spark" id="sparkCpu" viewBox="0 0 100 40" preserveAspectRatio="none">
@@ -1302,6 +1321,57 @@ function perfHTML(){
     <section class="card core-list" id="coreList"></section>
     <div class="section-head"><h2>运行状态</h2></div>
     <section class="card row-list" id="perfRows"></section>
+    <div class="section-head"><h2>迷你监视器</h2><span class="hint">悬浮窗</span></div>
+    <section class="card file-card">
+      <label>把实时数据浮在所有应用上面</label>
+      <div class="tagrow">
+        <button class="chip-btn" id="monOpen">打开悬浮窗</button>
+        <button class="chip-btn" id="monClose">关闭</button>
+        <button class="chip-btn" id="monCheck">检测状态</button>
+      </div>
+      <p class="field-hint" id="monHint">点「检测状态」看看桌面 App 装了没。</p>
+
+      <label style="margin-top:12px">显示哪些项（点一下开/关）</label>
+      <div class="tagrow" id="monShowRow">${monShowHTML()}</div>
+
+      <label style="margin-top:10px">时间格式</label>
+      <div class="tagrow">
+        <button class="chip-btn" id="monTf_hm">时:分</button>
+        <button class="chip-btn" id="monTf_hms">时:分:秒</button>
+      </div>
+
+      <label style="margin-top:12px">每一项的颜色（点「自动」那格切换自定义）</label>
+      <div id="monColorGrid">${monColorHTML()}</div>
+
+      <label style="margin-top:12px">底色 / 全局文字色 / 字号</label>
+      <div class="file-row">
+        <div class="cpick"><input type="color" id="monBg" value="#070a0f"><span>背景</span></div>
+        <div class="cpick"><input type="color" id="monFg" value="#e8ecf2"><span>全局文字色</span></div>
+        <button class="chip-btn" id="monFgAuto">自动</button>
+      </div>
+      <div class="file-row" style="align-items:center">
+        <span style="color:var(--text-2);font-size:11px">字号</span>
+        <input type="range" id="monSize" min="0.6" max="2" step="0.1" value="1" style="flex:1">
+        <span id="monSizeVal" style="color:var(--blue);font:600 11px var(--mono);width:38px;text-align:right">1.0×</span>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="monSave">保存</button>
+        <button class="chip-btn" id="monResetCfg">重置为默认</button>
+      </div>
+
+      <label style="margin-top:12px">悬浮窗位置</label>
+      <div class="monrow">
+        <button class="monmv" data-mv="-1,0">←</button>
+        <button class="monmv" data-mv="0,-1">↑</button>
+        <button class="monmv" data-mv="0,1">↓</button>
+        <button class="monmv" data-mv="1,0">→</button>
+        <button class="chip-btn" id="monCenter">居中</button>
+        <button class="chip-btn" id="monPosBtn">读位置</button>
+        <button class="chip-btn" id="monResetPos">重置</button>
+        <button class="chip-btn" id="monStepBtn" data-step="5">步长 5</button>
+      </div>
+      <p class="field-hint" id="monPosInfo">← ↑ ↓ → 直接挪悬浮窗，步长点右边那格切换。</p>
+    </section>
   </div>`;
 }
 function setRing(id, pct, color){
@@ -1455,30 +1525,6 @@ function parseThermal(s){
  * ============================================================ */
 function powerHTML(){
   return `<div class="view">
-    <div class="section-head"><h2>充电控制</h2><span class="hint" id="chgCapHint">读取中…</span></div>
-    <section class="card file-card">
-      <div class="row-list" id="chgStatus"></div>
-      <label style="margin-top:8px">充电上限 —— 到点自动停充</label>
-      <div class="file-row" style="align-items:center">
-        <input type="range" id="chgLimit" min="0" max="100" step="5" value="80" style="flex:1">
-        <span id="chgLimitVal" style="color:var(--blue);font:600 12px var(--mono);width:42px;text-align:right">80%</span>
-      </div>
-      <div class="tagrow">
-        <button class="chip-btn" id="chgLimitSet">设为上限</button>
-        <button class="chip-btn" id="chgLimitOff">关闭上限</button>
-      </div>
-      <div class="tagrow">
-        <button class="chip-btn" id="chgSuspend">停充</button>
-        <button class="chip-btn" id="chgResume">恢复充电</button>
-        <button class="chip-btn" id="chgSlowToggle">慢充 开/关</button>
-      </div>
-      <label style="margin-top:8px">充电功率上限（mW，留空=默认）</label>
-      <div class="file-row">
-        <input class="modern-input" id="chgPower" placeholder="例如 30000" inputmode="numeric" autocomplete="off">
-        <button class="action-btn primary" id="chgPowerSet">设置</button>
-      </div>
-    </section>
-
     <section class="card hero" id="powerHero">
       <div class="hero-mark" id="pwMark">⚡</div>
       <div class="hero-body">
@@ -1506,6 +1552,30 @@ function powerHTML(){
     <section class="card row-list" id="pwRows"></section>
     <div class="section-head"><h2>充电接口</h2></div>
     <section class="card row-list" id="chgRows"></section>
+
+    <div class="section-head"><h2>充电控制</h2><span class="hint" id="chgCapHint">读取中…</span></div>
+    <section class="card file-card">
+      <div class="row-list" id="chgStatus"></div>
+      <label style="margin-top:8px">充电上限 —— 到点自动停充</label>
+      <div class="file-row" style="align-items:center">
+        <input type="range" id="chgLimit" min="0" max="100" step="5" value="80" style="flex:1">
+        <span id="chgLimitVal" style="color:var(--blue);font:600 12px var(--mono);width:42px;text-align:right">80%</span>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="chgLimitSet">设为上限</button>
+        <button class="chip-btn" id="chgLimitOff">关闭上限</button>
+      </div>
+      <div class="tagrow">
+        <button class="chip-btn" id="chgSuspend">停充</button>
+        <button class="chip-btn" id="chgResume">恢复充电</button>
+        <button class="chip-btn" id="chgSlowToggle">慢充 开/关</button>
+      </div>
+      <label style="margin-top:8px">充电功率上限（mW，留空=默认）</label>
+      <div class="file-row">
+        <input class="modern-input" id="chgPower" placeholder="例如 30000" inputmode="numeric" autocomplete="off">
+        <button class="action-btn primary" id="chgPowerSet">设置</button>
+      </div>
+    </section>
   </div>`;
 }
 function battCurrentUA(raw){
@@ -1648,6 +1718,7 @@ function termHTML(){
       <div class="tagrow">
         <button class="chip-btn" id="guardMode">先观察</button>
         <button class="chip-btn" id="guardPerm">读写全拦</button>
+        <button class="chip-btn" id="guardLimit">时限 60s</button>
       </div>
       <div class="file-row">
         <button class="action-btn primary" id="guardRun" style="flex:1">受保护的执行</button>
@@ -1657,6 +1728,7 @@ function termHTML(){
         <button class="action-btn ghost" id="guardReset" style="flex:1">解锁界面</button>
         <button class="action-btn ghost" id="guardStop" style="flex:1">停掉后台</button>
       </div>
+      <p class="guard-stat" id="guardStat" style="display:none"></p>
     </section>
     <p class="field-hint" id="guardHint"></p>
     <div class="section-head"><h2>执行文件</h2><span class="hint">chmod 755 + 运行</span></div>
@@ -4407,6 +4479,7 @@ const GUARD_LOG = "/data/local/tmp/ksu_guard.log";
 const GUARD_RUN_LOG = "/data/local/tmp/ksu_guard_run.log";
 function guardState(){
   if(!state.guard) state.guard = {mode:"watch", reads:true, last:""};
+  if(!state.guard.limit) state.guard.limit = 60;
   return state.guard;
 }
 /* 核心原则：桥是【同步阻塞】的 —— ksu.exec 期间整个 JS 线程冻住。
@@ -4414,7 +4487,7 @@ function guardState(){
    做法：后台起进程，立刻返回；然后用极短的 tail 轮询日志。 */
 async function guardRun(){
   const G = guardState();
-  if(G.running){ toast("还在跑，点下面的「解锁」可以停"); return; }
+  if(G.running){ toast("还在跑，点下面的「解锁界面」可以停"); return; }
   const el = $("guardTarget");
   const target = ((el && el.value) || "").trim();
   if(!target){ toast("先填要跑的东西"); return; }
@@ -4422,7 +4495,9 @@ async function guardRun(){
   if(thermalState().demo){ toast("演示模式：未执行"); return; }
 
   const kill = G.mode === "kill";
-  G.running = true; G.tick = 0;
+  const tmo = G.limit || 60;
+  G.running = true; G.off = 0; G.hits = 0; G.anti = false; G.busy = false; G.t0 = Date.now();
+  G.launchShown = false;
   const btn = $("guardRun");
   if(btn){ btn.disabled = true; btn.textContent = "执行中…"; }
   busy(true, "已后台启动…");
@@ -4449,10 +4524,11 @@ async function guardRun(){
     '  echo "[*] 实际跑: $CMD"',
     'fi',
     ': > ' + shq(GUARD_LOG),
-    'timeout 50 "$B"' + (kill ? "" : " -w") + (G.reads ? "" : " -r") + " -l " + shq(GUARD_LOG) + ' -- sh -c "$CMD"',
-    'echo "退出码=$?"',
-    'echo "──── guard 日志 ────"',
-    'cat ' + shq(GUARD_LOG) + ' 2>/dev/null || echo "(没日志)"'
+    /* -t 让 guard 自己的看门狗跟这边的 timeout 对齐。
+       ⚠ 结尾【不再】tail guard 日志：
+         终端那边是逐行流式跟进的，再 dump 一遍就会"点一次出两份日志"。 */
+    'timeout ' + (tmo + 10) + ' "$B"' + (kill ? "" : " -w") + (G.reads ? "" : " -r") + " -t " + tmo + " -l " + shq(GUARD_LOG) + ' -- sh -c "$CMD"',
+    'echo "退出码=$?"'
   ].join("\n");
 
   // 启动命令本身也是短的：nohup ... & 之后立刻 echo 返回
@@ -4460,26 +4536,90 @@ async function guardRun(){
   try{
     await sh(": > " + shq(GUARD_RUN_LOG) + "; " + launch, 10000);
   }catch(e){}
-  termAppendBlock([["sys", "受保护的执行（" + (kill ? "拦截" : "观察") + "）: " + target]]);
+  termAppendBlock([["sys", "受保护的执行（" + (kill ? "拦截并杀死" : "先观察") + " · 时限 " + tmo + "s）: " + target]]);
   busy(false);
+  setGuardStat("● 已启动 · 0s · 命中 0 次", "on");
   pollGuard();
 }
+
+/* 运行状态条（那行小字） */
+function setGuardStat(txt, cls){
+  const el = $("guardStat");
+  if(!el) return;
+  if(!txt){ el.style.display = "none"; el.textContent = ""; el.className = "guard-stat"; return; }
+  el.style.display = "";
+  el.className = "guard-stat" + (cls ? " " + cls : "");
+  el.textContent = txt;
+}
+
+/* 轮询：只读【新增】的日志行，逐行追加到终端。
+   —— 旧版是 tail -n 250 整块替换 + 只渲染最后 120 行：
+      日志一超过那个窗口，前面的拦截记录就被顶掉了，
+      用户只看得到最早一条，后面全得手动点「看日志」。
+   现在拿行号当游标（G.off），每轮最多捞 60 行追加，一条都不会丢。 */
 function pollGuard(){
   const G = guardState();
-  const fin = () => {
-    clearTimeout(G.pollTimer); G.pollTimer = 0; G.running = false;
+  const fin = (msg) => {
+    clearTimeout(G.pollTimer); G.pollTimer = 0; G.running = false; G.busy = false;
     const b = $("guardRun"); if(b){ b.disabled = false; b.textContent = "受保护的执行"; }
+    if(msg) termAppendBlock([["err", msg]]);
   };
   clearTimeout(G.pollTimer);
   G.pollTimer = setTimeout(async () => {
-    let txt = "";
-    try{ const r = await sh("tail -n 250 " + shq(GUARD_RUN_LOG) + " 2>/dev/null", 9000); txt = r.stdout || ""; }
-    catch(e){}
-    if(txt) renderGuardOut(txt);
-    if(/退出码=/.test(txt)){
-      const hits = (txt.match(/^\S*\s*!!/gm) || []).length;
-      const anti = /\[反调试\]/.test(txt);
-      if(anti){
+    if(!G.running) return;
+    if(G.busy){ pollGuard(); return; }        // 上一轮还在等桥，别叠起来
+    G.busy = true;
+    const off = G.off | 0;
+    let out = "";
+    try{
+      const r = await sh(
+        'L=' + shq(GUARD_LOG) + '; R=' + shq(GUARD_RUN_LOG) + '; ' +
+        'n=$(wc -l < "$L" 2>/dev/null || echo 0); echo "@@N $n"; ' +
+        'if [ "$n" -gt ' + off + ' ]; then tail -n +' + (off + 1) + ' "$L" | head -n 60; fi; ' +
+        'echo "@@RUN"; tail -n 30 "$R" 2>/dev/null; ' +
+        'pgrep -f ksu_guard >/dev/null 2>&1 && echo "@@ALIVE 1" || echo "@@ALIVE 0"', 14000);
+      out = String(r.stdout || "");
+    }catch(e){}
+    G.busy = false;
+    if(!G.running) return;
+
+    let phase = 0, newLines = [], runLines = [], alive = false;
+    for(const L of out.split("\n")){
+      if(L.indexOf("@@N ") === 0){ phase = 1; continue; }
+      if(L === "@@RUN"){ phase = 2; continue; }
+      if(L.indexOf("@@ALIVE") === 0){ alive = /1$/.test(L); phase = 3; continue; }
+      if(L === "") continue;
+      if(phase === 1) newLines.push(L);
+      else if(phase === 2) runLines.push(L);
+    }
+    if(newLines.length){
+      G.off += newLines.length;
+      const joined = newLines.join("\n");
+      G.hits += (joined.match(/!!/g) || []).length;
+      if(joined.indexOf("[反调试]") >= 0) G.anti = true;
+      termAppendBlock(newLines.map(L => [(/!!/.test(L) ? "err" : "ok"), L]));
+    }
+    const secs = Math.round((Date.now() - G.t0) / 1000);
+    const done = runLines.some(L => /退出码=/.test(L));
+
+    // 用哪个 guard、实际跑的是什么 —— 第一轮就露个脸（免得等到结束才知道）
+    if(!G.launchShown){
+      const ls = runLines.filter(L => /^\[\*\]/.test(L));
+      if(ls.length){ G.launchShown = true; termAppendBlock(ls.map(L => ["sys", L])); }
+    }
+
+    if(done){
+      // 只回显驱动器自己的结论行（退出码 / 找不到 guard）
+      // —— guard 的日志上面已经实时滚过一遍了，不能再 dump 第二份
+      const own = runLines.filter(L => /^退出码=|^!!/.test(L));
+      if(own.length) termAppendBlock(own.slice(-6).map(L => [/^退出码=[1-9]|^!!/.test(L) ? "err" : "sys", L]));
+      const mm = /退出码=(-?\d+)/.exec(runLines.join("\n"));
+      const rc = mm ? parseInt(mm[1], 10) : -1;
+      const cut = (rc === 4);          // 4 = guard 到时限收工，不是目标自己结束
+      setGuardStat("● 已结束 · 用时 " + secs + "s · 命中 " + G.hits + " 次" +
+                   (cut ? " · 到时限掐断" : "") + (G.anti ? " · 有反调试迹象" : ""),
+                   (cut || G.anti) ? "warn" : "on");
+      if(G.anti){
         // 反 hook 的样本会去查 TracerPid / 关 dumpable，一发现被跟踪就装死或退出
         openModal("⚠️ 这个文件可能有防 hook", "不推荐执行",
           banner("danger", "检测到反调试行为",
@@ -4493,47 +4633,32 @@ function pollGuard(){
           '<p class="field-hint">不要以为「它退出了 = 它没干坏事」—— 它可能只是先撤，等你放开再动手。</p>',
           '<button data-act="ok">知道了</button>');
         $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
-      } else if(!hits && G.tick <= 2){
-        termAppendBlock([["err", "…它跑得非常快而且什么都没碰 —— 也可能是空脚本，也可能是反 hook 后直接退了。拿不准就别信它"]]);
+      } else if(cut){
+        termAppendBlock([["err", "…到时限被掐断了（不是它自己结束的）—— 上面的日志不是完整结论。把「时限」调长再跑一遍"]]);
+      } else if(rc === 9){
+        termAppendBlock([["err", "…找不到 ksu_guard —— 模块没装好？点「看日志」看看它 ls 出来的目录"]]);
+      } else if(!G.hits){
+        termAppendBlock([["err", "…它跑完了，一次危险行为都没碰到。要么它真的干净，要么它反 hook 完就撤了 —— 拿不准就别信它"]]);
       }
-      toast(anti ? "检测到反调试迹象，见弹窗" : (hits ? ("抓到 " + hits + " 处危险行为，详见终端") : "跑完了，没发现危险行为"));
+      if(G.off > 24){
+        termAppendBlock([["sys", "（这次日志有 " + G.off + " 行 —— 终端只保留最近的那部分，完整内容点上面「看日志」）"]]);
+      }
+      toast(G.anti ? "检测到反调试迹象，见弹窗"
+           : cut ? "到时限收工，结论不完整"
+           : rc === 9 ? "没找到 ksu_guard"
+           : (G.hits ? ("抓到 " + G.hits + " 处危险行为，全在终端里") : "跑完了，没发现危险行为"));
       fin(); return;
     }
-    if(++G.tick > 70){ termAppendBlock([["err", "…等了 70 秒还没结束，先不等了。去终端 ps -A | grep ksu_guard 看看"]]); fin(); return; }
-    pollGuard();
-  }, 1200);
-}
-let guardShown = "";
-function renderGuardOut(txt){
-  if(txt === guardShown) return;
-  guardShown = txt;
 
-  /* ⚠ 不能用「增量追加」——
-     这里是 tail -n 250，日志一超过 250 行窗口就开始滑动，
-     prev.length 和 now 的行数对不上，算出来的增量是错的；
-     而且每 1.2 秒追加一次，DOM 会一直涨。
-     所以改成：整块替换 + 只渲染最后 120 行。 */
-  let el = $("guardLive");
-  if(!el){
-    el = document.createElement("div");
-    el.id = "guardLive";
-    const host = $("termOut");
-    if(!host) return;
-    host.appendChild(el);
-  }
-  const lines = txt.split("\n").filter(Boolean).slice(-120);
-  const frag = document.createDocumentFragment();
-  for(const L of lines){
-    const d = document.createElement("div");
-    d.className = /!!/.test(L) ? "err" : "ok";
-    d.textContent = L;
-    frag.appendChild(d);
-  }
-  el.textContent = "";
-  el.appendChild(frag);
-  const host = $("termOut");
-  if(host) host.scrollTop = host.scrollHeight;
+    setGuardStat((alive ? "● guard 在跑" : "○ guard 进程没了") + " · " + secs + "s · 命中 " + G.hits + " 次", alive ? "on" : "warn");
+    if(secs > tmo + 30){
+      fin("…超过时限还没结束，先不等了。去终端 ps -A | grep ksu_guard 看看，或者点「停掉后台」");
+      return;
+    }
+    pollGuard();
+  }, 1000);
 }
+
 async function guardShowLog(){
   // 两个日志都要看：运行日志（外层脚本）+ guard 自己写的日志（它卡在哪一步）
   const r = await sh(
@@ -4548,8 +4673,9 @@ async function guardShowLog(){
 }
 function guardReset(){
   const G = guardState();
-  clearTimeout(G.pollTimer); G.pollTimer = 0; G.running = false; G.tick = 0;
+  clearTimeout(G.pollTimer); G.pollTimer = 0; G.running = false; G.tick = 0; G.busy = false;
   const b = $("guardRun"); if(b){ b.disabled = false; b.textContent = "受保护的执行"; }
+  setGuardStat("");
   busy(false);
   toast("已解锁。要停掉后台那个就点「停掉后台」");
 }
@@ -4557,13 +4683,6 @@ async function guardStop(){
   const r = await sh("pkill -9 -f 'ksu_guard' ; pkill -9 -f _guard_tgt ; echo 已发 SIGKILL", 9000);
   guardReset();
   termAppendBlock([["sys", "已尝试停掉后台 guard: " + String(r.stdout||"").trim()]]);
-}
-async function guardShowLog(){
-  const r = await sh("cat " + shq(GUARD_LOG) + " 2>/dev/null || echo '(还没有日志)'", 15000);
-  openModal("受保护的执行 · 日志", GUARD_LOG,
-    '<div class="logbox" style="max-height:60vh">' + esc(r.stdout || "(空)") + "</div>",
-    '<button data-act="ok">关闭</button>');
-  $("modalFooter").querySelector('[data-act="ok"]').onclick = closeModal;
 }
 function guardInit(){
   const G = guardState();
@@ -4597,6 +4716,18 @@ function guardInit(){
   const pk = $("guardPick");
   if(pk) pk.onclick = function(){ const i = $("termInput"); if(i && i.value) $("guardTarget").value = i.value; else toast("终端输入框是空的"); };
   const tg = $("guardTarget"); if(tg && !tg.value && G.last) tg.value = G.last;
+  const lim = $("guardLimit");
+  if(lim){
+    lim.textContent = "时限 " + (G.limit || 60) + "s";
+    lim.onclick = function(){
+      const seq = [30, 60, 120, 300];
+      const i = seq.indexOf(G.limit || 60);
+      G.limit = seq[(i + 1) % seq.length];
+      guardInit();
+      toast("单次执行上限 " + G.limit + " 秒（观察模式跑大文件可以调长点）");
+    };
+  }
+  if(!G.running) setGuardStat("");
 }
 
 /* ============================================================
@@ -4616,7 +4747,7 @@ async function monCheck(){
     installed = String(r.stdout || "").indexOf("package:" + MON_PKG) >= 0;
   }catch(e){}
   if(h) h.textContent = installed
-    ? "已装桌面 App。悬浮窗是屏幕正上方居中的小条，显示：CPU 利用率 │ 帧率 │ 功耗 │ 温度，每 2 秒刷新。可拖动，长按关闭。权限已由 root 自动给，不用手动点。"
+    ? "已装桌面 App。悬浮窗显示什么、什么颜色、放在哪，都在下面调 —— 保存后 2 秒内生效。权限已由 root 自动给，不用手动点。"
     : "还没装桌面 App —— 去「设置 → 桌面 App」装一下再来。";
   return installed;
 }
@@ -4781,12 +4912,114 @@ async function loadChangelog(url){
   }
 }
 
-async function monSaveCfg(){
-  if(thermalState().demo){ toast("演示模式：未执行"); return; }
-  const fg = ($("monFg") || {}).value || "#e8ecf2";
+/* ---- 配置文件读写 ----
+   monitor.conf 是明文 "key=value"，一行一条，App 每 2 秒读一次：
+     bg=#070a0f      背景色
+     fg=#e8ecf2      全局文字色（只有开了「固定色」才写；不写 = 按负载自动变色）
+     size=1.0        字号倍率
+     show=cpu,fps,pow,temp
+     tf=hm           时间格式：hm=时:分，hms=时:分:秒
+     cpu=#5be38a     单项颜色（不写 = 自动）                        */
+function monCfgBody(){
+  const c = monCfg();
   const bg = ($("monBg") || {}).value || "#070a0f";
   const sz = ($("monSize") || {}).value || "1";
-  const body = "fg=" + fg + "\nbg=" + bg + "\nsize=" + sz + "\n";
+  let b = "bg=" + bg + "\nsize=" + sz + "\ntf=" + c.tf + "\nshow=" + c.show.join(",") + "\n";
+  if(c.fgOn) b += "fg=" + (($("monFg") || {}).value || c.fg) + "\n";
+  MON_ITEMS.forEach(function(it){
+    const v = c.colors[it[0]];
+    if(v) b += it[0] + "=" + v + "\n";
+  });
+  return b;
+}
+function monPaint(){
+  const c = monCfg();
+  const sr = $("monShowRow");
+  if(sr){
+    sr.innerHTML = monShowHTML();
+    sr.querySelectorAll("[data-show]").forEach(function(b){
+      b.onclick = function(){
+        const k = b.dataset.show, i = c.show.indexOf(k);
+        if(i >= 0){
+          if(c.show.length <= 1){ toast("至少留一项 —— 全关掉悬浮窗就成一条缝了"); return; }
+          c.show.splice(i, 1);
+        } else c.show.push(k);
+        monPaint(); monDirty();
+      };
+    });
+  }
+  const cg = $("monColorGrid");
+  if(cg){
+    cg.innerHTML = monColorHTML();
+    cg.querySelectorAll("[data-auto]").forEach(function(b){
+      b.onclick = function(){
+        const k = b.dataset.auto;
+        if(c.colors[k]) delete c.colors[k];
+        else c.colors[k] = (($("monC_" + k) || {}).value) || MON_DEF_COLOR;
+        monPaint(); monDirty();
+      };
+    });
+    cg.querySelectorAll("input[type=color]").forEach(function(inp){
+      inp.oninput = function(){
+        const k = inp.id.slice(5);
+        if(!c.colors[k]){ c.colors[k] = inp.value; monPaint(); }
+        else c.colors[k] = inp.value;
+        monDirty();
+      };
+    });
+  }
+  [["hm","时:分"],["hms","时:分:秒"]].forEach(function(p){
+    const b = $("monTf_" + p[0]);
+    if(!b) return;
+    const on = c.tf === p[0];
+    b.style.background = on ? "var(--blue-soft)" : "";
+    b.style.color = on ? "var(--blue)" : "";
+    b.onclick = function(){ c.tf = p[0]; monPaint(); monDirty(); };
+  });
+  const fa = $("monFgAuto");
+  if(fa){
+    fa.style.background = c.fgOn ? "var(--blue-soft)" : "";
+    fa.style.color = c.fgOn ? "var(--blue)" : "";
+    fa.textContent = c.fgOn ? "固定色" : "自动";
+    fa.onclick = function(){ c.fgOn = !c.fgOn; monPaint(); monDirty(); };
+  }
+  const fgi = $("monFg");
+  if(fgi) fgi.style.opacity = c.fgOn ? "1" : ".35";
+  const sbtn = $("monStepBtn");
+  if(sbtn){
+    sbtn.textContent = "步长 " + (c.step || 5);
+    sbtn.onclick = function(){
+      const seq = [1, 5, 10, 30];
+      const i = seq.indexOf(c.step || 5);
+      c.step = seq[(i + 1) % seq.length];
+      monPaint();
+    };
+  }
+  document.querySelectorAll(".monrow [data-mv]").forEach(function(b){
+    b.onclick = function(){
+      const p = b.dataset.mv.split(",");
+      monMove(parseInt(p[0], 10), parseInt(p[1], 10));
+    };
+  });
+  const cc = $("monCenter"); if(cc) cc.onclick = monCenter;
+  const pb = $("monPosBtn"); if(pb) pb.onclick = monPos;
+  const rp = $("monResetPos"); if(rp) rp.onclick = monResetPos;
+  const sv = $("monSave"); if(sv) sv.onclick = monSaveCfg;
+  const rc = $("monResetCfg"); if(rc) rc.onclick = monResetCfg;
+  const sl = $("monSize");
+  if(sl) sl.oninput = function(){
+    const el = $("monSizeVal");
+    const v = parseFloat(sl.value);
+    if(el) el.textContent = (isFinite(v) ? v : 1).toFixed(1) + "×";
+  };
+}
+function monDirty(){
+  const h = $("monHint");
+  if(h) h.textContent = "改好了 —— 点「保存」，2 秒内生效。";
+}
+async function monSaveCfg(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  const body = monCfgBody();
   busy(true, "保存中");
   try{
     const r = await sh(
@@ -4794,24 +5027,64 @@ async function monSaveCfg(){
       "; chmod 644 " + shq(MON_CONF) + "; wc -c < " + shq(MON_CONF), 20000);
     const n = String(r.stdout || "").trim();
     toast(/^\d+$/.test(n) ? "已保存，2 秒内生效" : ("保存可能失败：" + n.slice(0,60)));
+    const h = $("monHint");
+    if(h && /^\d+$/.test(n)) h.textContent = "已保存（" + n + " 字节）：显示 " + monCfg().show.join("/") + "，时间 " + monCfg().tf;
   }finally{ busy(false); }
 }
 async function monResetCfg(){
   if(thermalState().demo){ toast("演示模式：未执行"); return; }
   try{
     await sh("rm -f " + shq(MON_CONF) + " 2>/dev/null; echo done", 15000);
+    state.mon = null; monCfg();
     if($("monFg")) $("monFg").value = "#e8ecf2";
     if($("monBg")) $("monBg").value = "#070a0f";
     if($("monSize")) $("monSize").value = "1";
     if($("monSizeVal")) $("monSizeVal").textContent = "1.0×";
-    toast("外观已恢复默认（2 秒内生效）");
+    monPaint();
+    toast("已恢复默认：CPU / FPS / 功耗 / 温度，其余按负载自动配色");
   }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+}
+/* ---- 位置控制：让桌面 App 自己挪悬浮窗 ----
+   dx/dy = 相对移动（px）；ax/ay = 绝对定位；center = 左右居中
+   实际在 MonitorActivity → MonitorService 里执行，这边只是发 Intent     */
+async function monMove(dx, dy){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  const step = monCfg().step || 5;
+  const ax = dx * step, ay = dy * step;
+  try{
+    const r = await sh("am start -n " + MON_PKG + "/.MonitorActivity --ei dx " + ax + " --ei dy " + ay + " 2>&1", 20000);
+    const out = String(r.stdout || "");
+    if(/Error|Exception|does not exist/i.test(out)) toast("挪不动：" + out.trim().slice(0, 80));
+    else toast("挪动 " + ax + " / " + ay + " px" + (step !== 5 ? "（步长 " + step + "）" : ""));
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+  setTimeout(monPos, 800);
+}
+async function monCenter(){
+  if(thermalState().demo){ toast("演示模式：未执行"); return; }
+  try{
+    await sh("am start -n " + MON_PKG + "/.MonitorActivity --ez center true 2>&1", 20000);
+    toast("已请求左右居中");
+  }catch(e){ toast("出错：" + ((e && e.message) || e)); }
+  setTimeout(monPos, 800);
+}
+async function monPos(){
+  const el = $("monPosInfo");
+  try{
+    const r = await sh("cat /data/data/" + MON_PKG + "/shared_prefs/monitor.xml 2>/dev/null", 12000);
+    const t = String(r.stdout || "");
+    const g = k => { const m = new RegExp('name="' + k + '" value="(-?\\d+)"').exec(t); return m ? m[1] : null; };
+    const x = g("mx"), y = g("my");
+    if(el) el.textContent = (x === null && y === null)
+      ? "还没记过位置 —— 先开一次悬浮窗，或者按一下方向键。"
+      : ("当前位置：x=" + x + "  y=" + y + " px（用拖动改的位置也会显示在这）");
+  }catch(e){ if(el) el.textContent = "读位置失败：" + ((e && e.message) || e); }
 }
 async function monResetPos(){
   if(thermalState().demo){ toast("演示模式：未执行"); return; }
   try{
     await sh("am start -n " + MON_PKG + "/.MonitorActivity --ez reset true 2>&1", 25000);
-    toast("已重置悬浮窗位置（会挪回状态栏下面）");
+    toast("已重置悬浮窗位置（回到状态栏下面）");
+    setTimeout(monPos, 900);
   }catch(e){ toast("出错：" + ((e && e.message) || e)); }
 }
 async function monLoadCfg(){
@@ -4819,11 +5092,25 @@ async function monLoadCfg(){
     const r = await sh("cat " + shq(MON_CONF) + " 2>/dev/null", 15000);
     const txt = String(r.stdout || "");
     const g = k => { const m = new RegExp("^" + k + "=(.*)$", "m").exec(txt); return m ? m[1].trim() : null; };
-    const fg = g("fg"), bg = g("bg"), sz = g("size");
-    if(fg && $("monFg")) $("monFg").value = fg;
+    const c = monCfg();
+    const fg = g("fg"), bg = g("bg"), sz = g("size"), tf = g("tf"), shw = g("show");
+    if(shw){
+      const arr = shw.split(",").map(s => s.trim().toLowerCase()).filter(k => MON_ITEMS.some(it => it[0] === k));
+      c.show = arr.length ? arr : MON_DEF_SHOW.slice();
+    }
+    c.colors = {};
+    MON_ITEMS.forEach(function(it){
+      const v = g(it[0]);
+      if(v && v.toLowerCase() !== "auto") c.colors[it[0]] = v;
+    });
+    if(tf === "hm" || tf === "hms") c.tf = tf;
+    c.fgOn = !!fg;
+    if(fg){ c.fg = fg; }
     if(bg && $("monBg")) $("monBg").value = bg;
+    if(fg && $("monFg")) $("monFg").value = fg;
     if(sz && $("monSize")) $("monSize").value = sz;
     if($("monSizeVal")) $("monSizeVal").textContent = (sz || "1") + "×";
+    monPaint();
   }catch(e){}
 }
 

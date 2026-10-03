@@ -7,9 +7,12 @@ import java.io.InputStreamReader;
  * 迷你监视器的数据源。
  *
  * 分工：
- *   · CPU 利用率 / 电池温度 / 电流 / 电压 —— 一次 `su -c` 捞回来
+ *   · CPU 利用率 / 温度 / 电流 / 电压 / 内存 / 电池 / GPU —— 一次 `su -c` 捞回来
  *     （App 跑在 u0_aXXX，不是 root，SELinux 不让它直接读 power_supply/*）
  *   · 帧率 —— 由 MonitorService 用 Choreographer 数帧，不在这里
+ *   · 时间 —— 本地算，不占采样
+ *
+ * v3.1.0 新增：内存占用率、电池电量、GPU 占用/频率（候选路径探测，读不到就 --）。
  */
 public class SysStats {
 
@@ -18,9 +21,13 @@ public class SysStats {
     public double fps = -1;          // 由外面塞进来
     public double powerW = -1;
     public double tempC = -1;
-    public String cfg = "";          // 用户在 WebUI 里设的配色/字号
+    public double ramPct = -1;       // 内存占用率
+    public double batPct = -1;       // 电池电量
+    public double gpuPct = -1;       // GPU 占用率（能拿到就用它）
+    public double gpuMhz = -1;       // GPU 频率（占用率拿不到就退而显示频率）
+    public String cfg = "";          // 用户在 WebUI 里设的配色/字号/显示项
 
-    /* ---------- 一次性采集脚本（不含帧率） ---------- */
+    /* ---------- 一次性采集脚本（不含帧率、不含时间） ---------- */
     private static final String SCRIPT =
         "S=/sys/class/power_supply; " +
         "echo STAT $(head -n1 /proc/stat); " +
@@ -30,6 +37,23 @@ public class SysStats {
         "echo CUR $C; " +
         "V=$(cat $S/battery/voltage_now 2>/dev/null); [ -z \"$V\" ] && V=$(cat $S/bms/voltage_now 2>/dev/null); " +
         "echo VOLT $V; " +
+        /* 内存：纯内建循环，一个外部命令都不 fork */
+        "M=; A=; while IFS= read -r L; do case \"$L\" in MemTotal:*) set -- ${L#MemTotal:}; M=$1;; MemAvailable:*) set -- ${L#MemAvailable:}; A=$1;; esac; done < /proc/meminfo; " +
+        "echo MEM $M $A; " +
+        "B=$(cat $S/battery/capacity 2>/dev/null); [ -z \"$B\" ] && B=$(cat $S/bms/capacity 2>/dev/null); " +
+        "echo BAT $B; " +
+        /* GPU：先找占用率（高通 kgsl → MTK → Mali），单位统一成 % */
+        "G=; for f in /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage /sys/kernel/gpu/gpu_utilization /sys/class/misc/mali0/device/utilization /sys/class/kgsl/kgsl-3d0/gpu_busy; do " +
+        "  if [ -z \"$G\" ] && [ -r \"$f\" ]; then IFS= read -r G < \"$f\"; fi; done; " +
+        "G=${G%% *}; G=${G%%%}; G=${G%%.*}; " +
+        "if [ -z \"$G\" ] && [ -r /sys/class/kgsl/kgsl-3d0/gpubusy ]; then set -- $(cat /sys/class/kgsl/kgsl-3d0/gpubusy 2>/dev/null); " +
+        "  [ -n \"$2\" ] && [ \"$2\" -gt 0 ] 2>/dev/null && G=$(( $1 * 100 / $2 )); fi; " +
+        "echo GPU $G; " +
+        /* GPU 频率（Hz → MHz），占用率拿不到时显示它 */
+        "U=; for f in /sys/class/kgsl/kgsl-3d0/gpuclk /sys/class/kgsl/kgsl-3d0/devfreq/cur_freq /sys/class/devfreq/gpufreq/cur_freq /sys/kernel/gpu/gpu_clock; do " +
+        "  if [ -z \"$U\" ] && [ -r \"$f\" ]; then IFS= read -r U < \"$f\"; fi; done; " +
+        "U=${U%% *}; [ -n \"$U\" ] && U=$(( U / 1000000 )) 2>/dev/null; " +
+        "echo GPUM $U; " +
         "echo CFG $(cat /data/adb/ksu_toolbox/monitor.conf 2>/dev/null | tr \"\\n\" \";\")";
 
     /* ---------- CPU 利用率：两次差值 ---------- */
@@ -88,6 +112,19 @@ public class SysStats {
                 }
                 else if (line.startsWith("CUR ")) curUA = parseLong(line.substring(4).trim(), Long.MIN_VALUE);
                 else if (line.startsWith("VOLT ")) voltUV = parseLong(line.substring(5).trim(), Long.MIN_VALUE);
+                else if (line.startsWith("MEM ")) parseMem(line.substring(4).trim());
+                else if (line.startsWith("BAT ")) {
+                    double b = parseNum(line.substring(4).trim(), -1);
+                    if (b >= 0 && b <= 100) batPct = b;
+                }
+                else if (line.startsWith("GPUM ")) {
+                    double u = parseNum(line.substring(5).trim(), -1);
+                    if (u > 0) gpuMhz = u;
+                }
+                else if (line.startsWith("GPU ")) {
+                    double g = parseNum(line.substring(4).trim(), -1);
+                    if (g >= 0 && g <= 100) gpuPct = g;
+                }
                 else if (line.startsWith("CFG ")) cfg = line.substring(4).trim();
                 if (System.currentTimeMillis() - t0 > 6000) break;
             }
@@ -99,6 +136,18 @@ public class SysStats {
         } finally {
             if (p != null) try { p.destroy(); } catch (Exception ignored) { }
         }
+    }
+
+    /** "MemTotal MemAvailable"（kB）→ 占用率 */
+    private void parseMem(String s) {
+        String[] f = s.split("\\s+");
+        if (f.length < 2) return;
+        long tot = parseLong(f[0], -1), avail = parseLong(f[1], -1);
+        if (tot <= 0) return;
+        double used = tot - (avail > 0 ? avail : 0);
+        if (used < 0) used = 0;
+        double pc = used * 100.0 / tot;
+        if (pc >= 0 && pc <= 100) ramPct = pc;
     }
 
     private void computePower() {
@@ -114,6 +163,19 @@ public class SysStats {
         if (v == Long.MIN_VALUE) return -1;
         double c = v > 100 ? v / 10.0 : v;      // 常见是十分之一度
         return (c > -20 && c < 120) ? c : -1;
+    }
+    private static double parseNum(String s, double def) {
+        if (s == null) return def;
+        try {
+            int i = 0, n = s.length();
+            while (i < n && !Character.isDigit(s.charAt(i)) && s.charAt(i) != '-' && s.charAt(i) != '.') i++;
+            int j = i;
+            if (j < n && s.charAt(j) == '-') j++;
+            while (j < n && (Character.isDigit(s.charAt(j)) || s.charAt(j) == '.')) j++;
+            if (j == i) return def;
+            double d = Double.parseDouble(s.substring(i, j));
+            return d;
+        } catch (Exception e) { return def; }
     }
     private static long parseLong(String s, long def) {
         if (s == null) return def;

@@ -32,6 +32,9 @@ import android.view.WindowManager;
 public class MonitorService extends Service {
 
     public static final String ACTION_STOP = "com.jeteezntmax.toolbox.STOP_MONITOR";
+    /** 挪动悬浮窗：--ei dx/--ei dy 相对移动，--ei ax/--ei ay 绝对定位（-1 = 不改） */
+    public static final String ACTION_NUDGE = "com.jeteezntmax.toolbox.NUDGE_MONITOR";
+    public static final String ACTION_RESET = "com.jeteezntmax.toolbox.RESET_MONITOR";
     private static final int NOTI_ID = 0x4A54;
     private static final String CH_ID = "jeteez_monitor";
     private static final int PERIOD_MS = 2000;
@@ -74,6 +77,7 @@ public class MonitorService extends Service {
         addOverlay();
         startFpsCounter();
         startLoop();
+        startClock();
     }
 
     @Override
@@ -82,7 +86,38 @@ public class MonitorService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        // WebUI / 桌面 App 隔着 Intent 挪悬浮窗：这边只改 lp 再 updateViewLayout
+        if (intent != null && ACTION_NUDGE.equals(intent.getAction())) {
+            int dx = intent.getIntExtra("dx", 0);
+            int dy = intent.getIntExtra("dy", 0);
+            int ax = intent.getIntExtra("ax", -1);
+            int ay = intent.getIntExtra("ay", -1);
+            if (intent.getBooleanExtra("center", false)) {
+                ax = centeredX();
+                ay = -1;
+            }
+            nudge(dx, dy, ax, ay);
+            return START_STICKY;
+        }
+        if (intent != null && ACTION_RESET.equals(intent.getAction())) {
+            getSharedPreferences(PREF, MODE_PRIVATE).edit().clear().apply();
+            nudge(0, 0, dp(2), statusBarH() + dp(1));
+            return START_STICKY;
+        }
         return START_STICKY;
+    }
+
+    /** 挪悬浮窗（并记到 SharedPreferences） */
+    private void nudge(int dx, int dy, int ax, int ay) {
+        if (lp == null || view == null || wm == null) return;
+        int x = (ax >= 0) ? ax : lp.x + dx;
+        int y = (ay >= 0) ? ay : lp.y + dy;
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;      // 别挪到状态栏上方：那条的触摸会被通知栏吃掉，拖不回来
+        lp.x = x;
+        lp.y = y;
+        try { wm.updateViewLayout(view, lp); } catch (Exception ignored) { }
+        getSharedPreferences(PREF, MODE_PRIVATE).edit().putInt("mx", x).putInt("my", y).apply();
     }
 
     @Override
@@ -92,6 +127,7 @@ public class MonitorService extends Service {
                     .putInt("mx", lp.x).putInt("my", lp.y).apply();
         }
         running = false;
+        ui.removeCallbacksAndMessages(null);
         if (worker != null) { worker.interrupt(); worker = null; }
         if (view != null && wm != null) {
             try { wm.removeView(view); } catch (Exception ignored) { }
@@ -123,7 +159,7 @@ public class MonitorService extends Service {
                 ? new Notification.Builder(this, CH_ID)
                 : new Notification.Builder(this);
         b.setContentTitle("迷你监视器运行中")
-         .setContentText("点「停止」关闭悬浮窗（长按悬浮窗也可以）")
+         .setContentText("点「停止」关闭悬浮窗（双击悬浮窗也可以）")
          .setSmallIcon(android.R.drawable.stat_notify_sync)
          .setShowWhen(false)
          .setOngoing(true);
@@ -208,6 +244,26 @@ public class MonitorService extends Service {
             }
         } catch (Exception ignored) { }
         return dp(28);
+    }
+
+    /** 左右居中：用自己量出来的宽度算，比 WebUI 瞎猜准 */
+    private int centeredX() {
+        int sw = getResources().getDisplayMetrics().widthPixels;
+        int vw = (view != null) ? view.getWidth() : 0;
+        if (vw <= 0) vw = sw / 3;                 // 还没量过就先按三分之一估
+        int x = (sw - vw) / 2;
+        return x > 0 ? x : 0;
+    }
+
+    /* ---------- 每秒一次：只为了让「时间」那一项秒数会跳 ---------- */
+    private void startClock() {
+        ui.postDelayed(new Runnable() {
+            public void run() {
+                if (!running) return;
+                if (view != null) view.tick();
+                ui.postDelayed(this, 1000);
+            }
+        }, 1000);
     }
 
     /* ---------- 帧率：用 Choreographer 数帧 ----------
